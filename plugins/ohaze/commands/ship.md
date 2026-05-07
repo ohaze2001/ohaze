@@ -41,7 +41,11 @@ If `$ARGUMENTS` is empty, ask the user what they want to ship before proceeding.
 5. Invoke the `superpowers:writing-plans` skill.
    - It saves the plan to `docs/superpowers/plans/<date>-<feature>.md`.
    - Capture the absolute plan file path.
-   - Wait for the user to approve the plan before continuing.
+   - **CRITICAL — Override writing-plans' built-in handoff:** at the end of writing-plans the skill will try to display its own prompt asking the user to choose between "Subagent-Driven" and "Inline Execution". DO NOT show that menu. DO NOT wait for the user to pick 1 or 2. The execution path is already decided by `/ohaze:ship` — it goes through Codex via Phase 4 below.
+   - Instead, after the plan is saved and self-reviewed, present a different prompt:
+     > "Plan saved to `<path>`. 请审阅后回复 'go' 继续，让 Codex 后台执行整份 plan。"
+   - Wait for the user's approval of the **plan content** (not the execution method).
+   - When the user approves, proceed directly to Phase 4. Do NOT invoke `superpowers:subagent-driven-development` or `superpowers:executing-plans` — those are explicitly out of the ohaze workflow.
 
 ## Phase 4 — Hand off to Codex (ohaze)
 
