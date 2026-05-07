@@ -31,11 +31,23 @@
 
 ## 安装
 
-```bash
-git clone https://github.com/muling-dev/ohaze ~/Project/ohaze
-ln -sf ~/Project/ohaze ~/.claude/plugins/ohaze
-# 在 Claude Code 内执行：/plugin reload
+ohaze 本身是一个 Claude Code marketplace（仓库即 marketplace，里面只有一个 plugin）。
+
+**方式 A：从 GitHub 安装（推送后可用）**
+
+```text
+/plugin marketplace add muling-dev/ohaze
+/plugin install ohaze@ohaze
 ```
+
+**方式 B：本地路径安装（开发期）**
+
+```text
+/plugin marketplace add /Users/apple/Project/ohaze
+/plugin install ohaze@ohaze
+```
+
+安装后两个命令立即可用：`/ohaze:ship` 和 `/ohaze:ship-review`。
 
 ## 使用
 

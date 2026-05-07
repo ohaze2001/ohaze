@@ -9,13 +9,16 @@
 - 本地安装：软链 `~/Project/ohaze` → `~/.claude/plugins/ohaze`
 
 ## 关键文件
+仓库本身是一个 Claude Code marketplace。布局：
+
 | 文件 | 作用 |
 |------|------|
-| .claude-plugin/plugin.json | 插件元信息 |
-| commands/ship.md | `/ohaze:ship` 主入口：编排 brainstorm→plan→Codex→review→finishing |
-| commands/ship-review.md | `/ohaze:ship-review` 续跑：Codex 完成后触发审查循环+finishing |
-| skills/plan-to-codex-prompt/SKILL.md | plan.md → Codex XML prompt 翻译规则 |
-| skills/codex-executor/SKILL.md | 调 codex:codex-rescue + 审查重试循环 |
+| .claude-plugin/marketplace.json | marketplace 元信息（声明本仓库内有哪些 plugin） |
+| plugins/ohaze/.claude-plugin/plugin.json | plugin 元信息 |
+| plugins/ohaze/commands/ship.md | `/ohaze:ship` 主入口：编排 brainstorm→plan→Codex→review→finishing |
+| plugins/ohaze/commands/ship-review.md | `/ohaze:ship-review` 续跑：Codex 完成后触发审查循环+finishing |
+| plugins/ohaze/skills/plan-to-codex-prompt/SKILL.md | plan.md → Codex XML prompt 翻译规则 |
+| plugins/ohaze/skills/codex-executor/SKILL.md | 调 codex:codex-rescue + 审查重试循环 |
 
 ## 设计决策（V1）
 - **执行粒度**：整份 plan 一次性给 Codex（端到端）
@@ -37,8 +40,13 @@
 | 7 finishing | Claude | superpowers |
 
 ## 常用命令
-- 本地安装：`ln -sf ~/Project/ohaze ~/.claude/plugins/ohaze`
-- 重载：在 Claude Code 内 `/plugin reload`
+- 本地安装（开发期，无需推 GitHub）：在 Claude Code 内
+  - `/plugin marketplace add /Users/apple/Project/ohaze`
+  - `/plugin install ohaze@ohaze`
+- 远程安装（推 GitHub 后）：
+  - `/plugin marketplace add muling-dev/ohaze`
+  - `/plugin install ohaze@ohaze`
+- 改完 plugin 文件后：`/plugin marketplace update ohaze`（拉新版）
 - 推 GitHub：`gh repo create muling-dev/ohaze --public --source=. --push`
 
 ## 外部依赖

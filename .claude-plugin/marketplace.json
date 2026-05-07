@@ -1,0 +1,22 @@
+{
+  "name": "ohaze",
+  "owner": {
+    "name": "muling-dev",
+    "email": "viv1dguycn@gmail.com"
+  },
+  "metadata": {
+    "description": "Personal Claude Code workflow: superpowers brainstorm/plan + Codex execute + Claude review + superpowers finishing.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "ohaze",
+      "description": "End-to-end /ohaze:ship command orchestrating superpowers + codex + reviewer subagents.",
+      "version": "0.1.0",
+      "author": {
+        "name": "muling-dev"
+      },
+      "source": "./plugins/ohaze"
+    }
+  ]
+}
