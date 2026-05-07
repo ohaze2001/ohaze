@@ -1,0 +1,19 @@
+{
+  "name": "ohaze",
+  "version": "0.1.0",
+  "description": "Personal Claude Code workflow: superpowers brainstorm/plan + Codex execute + Claude review + superpowers finishing",
+  "author": {
+    "name": "muling-dev",
+    "email": "viv1dguycn@gmail.com"
+  },
+  "homepage": "https://github.com/muling-dev/ohaze",
+  "repository": "https://github.com/muling-dev/ohaze",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "superpowers",
+    "codex",
+    "tdd",
+    "orchestration"
+  ]
+}
