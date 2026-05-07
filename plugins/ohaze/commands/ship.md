@@ -29,12 +29,15 @@ If `$ARGUMENTS` is empty, ask the user what they want to ship before proceeding.
    - It will lead the user through clarifying questions, design proposals, and write a spec to `docs/superpowers/specs/<date>-<topic>-design.md`.
    - DO NOT bypass any user-approval gates inside brainstorming.
    - Wait until the spec is committed and the user explicitly approves it.
+   - **CRITICAL — Override brainstorming's terminal state:** brainstorming's last instruction says "invoke writing-plans skill" as the next step. DO NOT do that yet. Phase 2 (worktree) MUST run before writing-plans, otherwise Codex will write code on the wrong branch. After brainstorming finishes its spec self-review and the user approves the spec, proceed to Phase 2 explicitly.
 
-## Phase 2 — Worktree (superpowers)
+## Phase 2 — Worktree (superpowers) — DO NOT SKIP
 
 4. Invoke the `superpowers:using-git-worktrees` skill.
-   - Branch name: derive from the spec filename (e.g. `feat/login-page`).
+   - This step is **mandatory** even though brainstorming may have implied "go straight to writing-plans". Without this step the implementation lands on whatever branch the user happened to be on (often `main`), defeating the isolation guarantee.
+   - Branch name: derive from the spec filename (e.g. spec `2026-05-08-login-page-design.md` → branch `feat/login-page`).
    - Capture the worktree path and base branch (typically `main`); these are needed in Phase 4 and Phase 5.
+   - After the worktree is created and the clean test baseline passes, **`cd` into the worktree** before invoking writing-plans, so the plan and all subsequent work happens inside the isolated worktree.
 
 ## Phase 3 — Plan (superpowers)
 

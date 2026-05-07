@@ -13,3 +13,43 @@
   → 重构为 marketplace+plugin 布局：仓库根放 `.claude-plugin/marketplace.json`，
      plugin 实体在 `plugins/ohaze/`
 - 待处理：本地 marketplace 安装测试 → 真实项目跑通 `/ohaze:ship` → 推 GitHub
+
+## 2026-05-08
+
+### V1 沙箱实测 — 端到端跑通
+
+测试任务：`/ohaze:ship 加一个 subtract 函数到 src/math.js，并配上测试`
+（沙箱：`~/Project/ohaze-sandbox/`，session log：`docs/session-log-2026-05-08.md`）
+
+**结果**：
+- 流程跑通：brainstorm → writing-plans → codex 派发 → result → 自动续跑 → review → finishing
+- 审查 VERDICT: PASS，0 retries
+- 产物质量：spec / plan / code / tests 全部高质量，TDD 节奏到位
+- Codex 总耗时 1m45s
+
+### 发现的 4 个 V1 bug + 已落地修复
+
+**Bug 1：writing-plans 自带"两选项"菜单截断流程**（commit `99c1ee0`）
+- 现象：plan 写完后 superpowers 让用户选 1/2，绕过 ohaze Phase 4
+- 修法：ship.md Phase 3 加 CRITICAL override，明确禁止显示该菜单
+
+**Bug 2：codex-rescue subagent 缺 Bash 权限静默失败**（commit `2a12806`）
+- 现象：subagent 没有 interactive permission UI，settings.json 里没 `Bash(node:*)` 时直接派不出去
+- 修法：codex-executor skill 加 Path B fallback，subagent 失败自动回落到主线程直接调 codex-companion.mjs
+
+**Bug 3：Codex 沙箱拦 `.git/` 写入**（V1.1）
+- 现象：Codex `workspace-write` 模式特意禁止 `.git/` 写入（产品安全设计，非 bug）
+- 现象延伸：Codex 写完代码+测试后，`git add` 报 `Operation not permitted`，commit step 全部失败
+- 修法：
+  - plan-to-codex-prompt 加 `<commit_handling>` 块，明示告知 Codex 不要 commit
+  - codex-executor 加 Phase 5.0：review 之前由主线程统一 commit
+  - `<output_report>` 调整：Codex 报告"intended commit messages"列表
+
+**Bug 4：worktree 阶段被 brainstorming 跳过**（V1.1）
+- 现象：brainstorming 的 terminal state 是直接调 writing-plans，绕过 using-git-worktrees
+- 后果：实测中 Codex 直接在 main 上写代码，没建独立 feature branch
+- 修法：ship.md Phase 1 加 CRITICAL override，明确禁止 brainstorming 直跳；Phase 2 标记 mandatory
+
+### V1.1 状态
+- 4 个 bug 全部修完，待新 session 重测
+- 推 GitHub 暂缓，等 V1.1 重测通过

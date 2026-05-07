@@ -36,14 +36,23 @@ The plan content is reproduced below. Treat it as the authoritative source of tr
 
 <completeness_contract>
 Done means ALL of:
-1. Every Task's checkbox steps in the plan are completed.
-2. Every commit step in the plan has been made (one commit per Task as the plan instructs).
-3. The full project test command `{project_test_command}` reports zero failures.
-4. `git status` is clean (no uncommitted changes, no untracked files left behind).
+1. Every Task's NON-COMMIT checkbox steps in the plan are completed (write code, write tests, run verification).
+2. The full project test command `{project_test_command}` reports zero failures.
+3. The working tree contains exactly the changes the plan describes (no extra files, no skipped tasks).
+
+Note: the plan instructs `git add` / `git commit` steps. Skip those — see <commit_handling> below.
 </completeness_contract>
 
+<commit_handling>
+You are running inside Codex's `workspace-write` sandbox, which **blocks all writes to `.git/`**. Do NOT run `git add`, `git commit`, `git stash`, or any command that modifies git state. The sandbox will reject it with "Operation not permitted".
+
+For every Task's commit step in the plan: skip the actual `git` command, but still consider the Task done as long as the code and test changes are written and verification passed. The commits will be made by the orchestrator (Claude main session) in a follow-up step, using the exact commit messages the plan specifies.
+
+In your final report (see <output_report>), set `Commits made: skipped (sandbox blocks .git/, orchestrator will commit)` and provide the list of intended commit messages from the plan, in order.
+</commit_handling>
+
 <verification_loop>
-After completing each Task's commit step, run `{project_test_command}`. If any test fails, fix the failing tests within the same Task before moving to the next Task. Do not proceed past a failing test.
+After completing each Task's non-commit steps, run `{project_test_command}`. If any test fails, fix the failing tests within the same Task before moving to the next Task. Do not proceed past a failing test.
 
 At the very end, run `{project_test_command}` one more time and confirm zero failures before reporting done.
 </verification_loop>
@@ -70,11 +79,11 @@ If a Task's instructions are ambiguous, contradict each other, or require inform
 
 <output_report>
 At the end, report in this format:
-- Tasks completed: N / total
+- Tasks completed: N / total (counting non-commit steps only; commits are orchestrator's job)
 - Tasks with concerns: list any Task numbers where you flagged ambiguity or partial completion
 - Final test status: PASS / FAIL with summary
 - Touched files: full list grouped by Create / Modify / Delete
-- Commits made: SHA + first line of each commit message
+- Commits made: skipped (sandbox blocks .git/) — list the intended commit messages from the plan, in order, so the orchestrator can apply them.
 </output_report>
 ```
 

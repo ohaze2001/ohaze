@@ -71,13 +71,37 @@ If the user passed `mode=--wait`, swap `--background` for `--wait` in the prompt
 
 Trigger this when the Codex run completes (signaled by `/codex:status` reporting done, or invoked from `/ohaze:ship-review`).
 
-1. Fetch Codex's final result: run `/codex:result` (or read its output if already returned).
-2. Compute the diff to review:
+### Phase 5.0: Apply Codex's pending changes as commits (REQUIRED)
+
+Codex's sandbox blocks `.git/` writes (this is by design — see plan-to-codex-prompt's `<commit_handling>`), so Codex leaves uncommitted changes in the worktree. Before review, the orchestrator must commit those changes using the messages the plan specified.
+
+1. Fetch Codex's final result: run `/codex:result <run_id>` (or read its output if already returned). Look for the `Commits made: skipped ...` line listing the intended commit messages.
+
+2. Inspect what Codex left behind:
+   ```bash
+   git -C <worktree_path> status --short
+   git -C <worktree_path> diff
+   ```
+
+3. If there are uncommitted changes:
+   - **Single Task changed**: stage all changes and commit with the single message from Codex's report.
+     ```bash
+     git -C <worktree_path> add -A
+     git -C <worktree_path> commit -m "<intended message from Codex report>"
+     ```
+   - **Multiple Tasks (multiple intended messages)**: try to split per-Task using the plan's `Files:` sections to determine which files belong to which Task. If splitting is not feasible (files overlap), fall back to one combined commit using the LAST intended message.
+   - If `git commit` fails (hooks, etc.), surface the error and stop. Do NOT bypass hooks.
+
+4. If working tree is already clean (Codex DID manage to commit, or there were no changes), skip step 3.
+
+### Phase 5.1: Compute the diff to review
+
    ```bash
    git -C <worktree_path> diff <base_ref>...HEAD
    git -C <worktree_path> log --oneline <base_ref>..HEAD
    ```
-3. Dispatch the reviewer subagent:
+
+### Phase 5.2: Dispatch the reviewer subagent
    ```
    Agent(
      subagent_type="superpowers:code-reviewer",
