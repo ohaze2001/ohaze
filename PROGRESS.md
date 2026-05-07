@@ -53,3 +53,27 @@
 ### V1.1 状态
 - 4 个 bug 全部修完，待新 session 重测
 - 推 GitHub 暂缓，等 V1.1 重测通过
+
+### V1.5 同期落地（一起测）
+
+讨论完 worktree 用途和 finishing 缺"继续修改"选项后，把以下功能并入 V1.5：
+
+**新增 `/ohaze:status` 命令**（`commands/status.md`）
+- 跨 worktree 工作流总览：每个 worktree 的分支、git 状态、ohaze handoff、Codex job 状态、stale 检测
+- 远端 PR 状态（用 gh 拉，可选）
+- 只读，不会自动清理
+
+**finishing 菜单加第 5 个选项 "继续修改"**（`commands/ship-review.md`）
+- 4 个原选项保留（push / PR / keep / discard），第 5 个进 modify 子流程
+- 子流程 3 选 1：a) Codex `--resume` 续跑，b) Claude 主线程直接 Edit，c) 退出让用户自己改后回 `/ohaze:ship-finish`
+- 改完默认建议再跑一次 review，循环回 finishing 菜单
+
+**新增 `/ohaze:ship-finish` 命令**（`commands/ship-finish.md`）
+- 从"保持现状"或"自己改"状态续跑
+- 检测未提交改动 → 帮 commit
+- 可选再 review (默认 yes)
+- 进同款 5 选项 finishing 菜单
+
+**架构决策**：finishing 菜单从 superpowers 收回，由 ohaze 自己实现 5 个选项。这避免了菜单嵌套和"继续修改"在外部 skill 里改不进去的问题。
+
+V1.5 与 V1.1 一起重测，OK 后推 GitHub。

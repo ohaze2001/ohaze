@@ -49,20 +49,62 @@ ohaze 本身是一个 Claude Code marketplace（仓库即 marketplace，里面�
 
 安装后两个命令立即可用：`/ohaze:ship` 和 `/ohaze:ship-review`。
 
-## 使用
+## 命令清单
+
+| 命令 | 作用 |
+|---|---|
+| `/ohaze:ship "需求"` | 端到端：brainstorm → worktree → plan → Codex 后台执行 |
+| `/ohaze:ship-review [--more]` | Codex 跑完后触发：审查 → 重试上限 3 → 5 选项 finishing 菜单 |
+| `/ohaze:ship-finish [--skip-review]` | 续跑：从"保持现状"或"自己改"状态恢复，可选再 review，进 finishing |
+| `/ohaze:status` | 跨 worktree 工作流总览：哪个在跑、哪个等审查、哪个 stale |
+
+## 使用示例
+
+### 主流程
 
 ```text
 /ohaze:ship 给 hazeflow 加用户登录页
 
-# Claude 跑完 brainstorm + plan 后会把整份 plan 后台扔给 Codex
-# 提示你用 /codex:status 看进度
+# Claude 走 brainstorm + worktree + plan 后把整份 plan 后台扔给 Codex
+# 提示用 /codex:status 看进度
 
 /ohaze:ship-review
 
-# Codex 跑完后用这条命令触发：
-# - superpowers:code-reviewer 子 agent 审查 git diff vs plan
-# - 不通过 → 自动 codex --resume 修复（上限 3 次）
-# - 通过 → superpowers:finishing-a-development-branch 收尾
+# Codex 跑完后:
+# - 主线程帮 Codex 补 commit (沙箱拦了 .git/)
+# - superpowers:code-reviewer 审查 git diff vs plan
+# - 不通过 → 自动 codex --resume 修复 (上限 3 次)
+# - 通过 → 5 选项 finishing 菜单
+```
+
+### Finishing 菜单
+
+```
+1. 推送到远端
+2. 创建 Pull Request
+3. 保持现状 (稍后处理)
+4. 丢弃此次工作
+5. 继续修改 (小改动)   ← 不需要走完整 ship 的小调整
+```
+
+选 5 后子菜单：
+- a) Codex 续跑 (`--resume`，沿用同一 thread)
+- b) Claude 主线程直接改 (改名/加注释/单行 fix)
+- c) 我自己改 (退出，手改完跑 `/ohaze:ship-finish`)
+
+### 跨 worktree 总览
+
+```text
+/ohaze:status
+
+# 输出:
+# 项目: myproject
+# 📍 主目录    main      干净
+# 🔧 worktrees:
+#   feat-login   分支:feat/login    🟡 Codex 跑中 (run_id, 4m)
+#   fix-auth     分支:fix/auth      🟢 等审查
+#   experiment-x 分支:experiment/x  🟡 stale (7+ 天)
+# 📊 远端 PRs (gh): #42 ...
 ```
 
 ## 设计决策（V1）

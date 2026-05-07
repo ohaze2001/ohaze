@@ -15,10 +15,12 @@
 |------|------|
 | .claude-plugin/marketplace.json | marketplace 元信息（声明本仓库内有哪些 plugin） |
 | plugins/ohaze/.claude-plugin/plugin.json | plugin 元信息 |
-| plugins/ohaze/commands/ship.md | `/ohaze:ship` 主入口：编排 brainstorm→plan→Codex→review→finishing |
-| plugins/ohaze/commands/ship-review.md | `/ohaze:ship-review` 续跑：Codex 完成后触发审查循环+finishing |
-| plugins/ohaze/skills/plan-to-codex-prompt/SKILL.md | plan.md → Codex XML prompt 翻译规则 |
-| plugins/ohaze/skills/codex-executor/SKILL.md | 调 codex:codex-rescue + 审查重试循环 |
+| plugins/ohaze/commands/ship.md | `/ohaze:ship` 主入口：编排 brainstorm→worktree→plan→Codex 后台派发 |
+| plugins/ohaze/commands/ship-review.md | `/ohaze:ship-review` Codex 完成后审查循环 + 5 选项 finishing 菜单 (含"继续修改") |
+| plugins/ohaze/commands/ship-finish.md | `/ohaze:ship-finish` 从 paused/self-edit 状态恢复，可选再 review，进 finishing |
+| plugins/ohaze/commands/status.md | `/ohaze:status` 跨 worktree 工作流总览 |
+| plugins/ohaze/skills/plan-to-codex-prompt/SKILL.md | plan.md → Codex XML prompt 翻译规则（含 commit_handling: 不要 commit）|
+| plugins/ohaze/skills/codex-executor/SKILL.md | 调 codex:codex-rescue + Phase 5.0 主线程补 commit + 审查重试循环 |
 
 ## 设计决策（V1）
 - **执行粒度**：整份 plan 一次性给 Codex（端到端）
