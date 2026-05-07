@@ -21,7 +21,9 @@ Hand a translated XML prompt to Codex via the `codex` plugin, then run the Claud
 
 ## Phase 4: Dispatch Codex
 
-Use the `codex:codex-rescue` subagent. The dispatch is exactly one Agent call:
+There are TWO paths. Try Path A first; fall back to Path B if A fails or returns empty stdout (typically because the subagent lacks Bash permission).
+
+### Path A — preferred: codex:codex-rescue subagent
 
 ```
 Agent(
@@ -36,9 +38,30 @@ Notes:
 - Do NOT add any natural-language instruction outside the XML — the XML is the entire prompt.
 - The subagent returns its stdout verbatim. Capture the codex run identifier from the response.
 
-After dispatch, immediately tell the user:
+### Path B — fallback: direct Bash invocation
 
-> "Codex 已后台执行 (run_id=`<id>`). 用 `/codex:status` 看进度, 跑完后用 `/ohaze:ship-review` 触发审查."
+If Path A returns empty / errors / reports missing Bash permission, do NOT abort. Run the same command directly from the main session:
+
+```bash
+# Resolve current codex plugin install path
+codex_root=$(ls -d ~/.claude/plugins/cache/openai-codex/codex/*/ | sort -V | tail -1)
+
+# Dispatch the same task. Note: codex_prompt is the full XML string from
+# ohaze:plan-to-codex-prompt — embed it as a single-quoted literal.
+node "${codex_root}scripts/codex-companion.mjs" task --background --write '<codex_prompt>'
+```
+
+The stdout contains a line like `Codex Task started in the background as task-XXXXXXX-YYYYYY`. Extract the job ID.
+
+### Why the fallback exists
+
+Subagents in Claude Code require `Bash(node:*)` (or a more specific pattern) to be present in the user's `~/.claude/settings.json` `permissions.allow` array, because subagents have no interactive permission UI. If the user hasn't pre-approved this, Path A silently fails and Path B is the only way through. The functional result is the same — Codex runs the same prompt either way; we only lose the codex-rescue subagent's optional gpt-5-4-prompting refinement, which is redundant since `ohaze:plan-to-codex-prompt` already produces a tight XML contract.
+
+### After dispatch (either path)
+
+Immediately tell the user:
+
+> "Codex 已后台执行 (run_id=`<id>`). 用 `/codex:status <id>` 看进度, 跑完后用 `/ohaze:ship-review` 触发审查."
 
 Then stop. The session ends here. Phases 5-6 happen later in `/ohaze:ship-review`.
 
