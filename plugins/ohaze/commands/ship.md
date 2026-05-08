@@ -79,20 +79,28 @@ DO NOT auto-poll. DO NOT trigger Phase 5 in this same `/ohaze:ship` invocation. 
 
 ## Persisting context for /ohaze:ship-review
 
-To make `/ohaze:ship-review` self-sufficient (it runs in a possibly-different session), write a small handoff file at the end of Phase 4:
+To make `/ohaze:ship-review` self-sufficient (it runs in a possibly-different session), write a small handoff file at the end of Phase 4.
 
-```bash
-mkdir -p .ohaze
-cat > .ohaze/current-ship.json <<EOF
+**IMPORTANT — order of operations** (the `Write` tool does NOT create parent directories, so the dir MUST exist first):
+
+1. Run `mkdir -p .ohaze` via Bash (relative to the worktree path).
+2. Verify the dir exists with `ls -d .ohaze`.
+3. THEN use the `Write` tool (or `Bash` + heredoc) to create `.ohaze/current-ship.json`.
+
+If you skip step 1, the first `Write` attempt will fail with "Error writing file", forcing a retry. Don't make that mistake — always `mkdir -p` first.
+
+Handoff file shape:
+```json
 {
   "plan_path": "<absolute path>",
   "base_ref": "<branch>",
   "worktree_path": "<absolute path>",
   "spec_path": "<absolute path>",
   "started_at": "<ISO timestamp>",
-  "retries": 0
+  "retries": 0,
+  "codex_run_id": "<task-xxx-yyy if Path A succeeded, else fill in after Path B>",
+  "state": "running"
 }
-EOF
 ```
 
 `.ohaze/` should be added to `.gitignore` (do this once via the worktree skill or here if missing).
