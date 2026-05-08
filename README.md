@@ -4,57 +4,69 @@
 
 ## 它是什么
 
-`ohaze` 把三个工具的强项串成一条闭环流水线：
+`ohaze` 把三个工具的强项串成一条闭环流水线，**一条 `/ohaze:ship "做什么"` 命令端到端跑完**：
 
 | 阶段 | 谁干 | 来源 |
 |---|---|---|
-| 1. brainstorming（澄清需求） | Claude | `superpowers` |
+| 1. brainstorming（澄清需求 → 写 spec） | Claude | `superpowers` |
 | 2. using-git-worktrees（隔离工作区） | Claude | `superpowers` |
 | 3. writing-plans（生成 TDD 实现计划） | Claude | `superpowers` |
-| 4. plan → Codex prompt | Claude | `ohaze` |
-| 4. 执行整份 plan | Codex | `codex` 插件 |
+| 4a. plan → Codex XML prompt | Claude | `ohaze` |
+| 4b. 执行整份 plan | Codex | `codex` 插件 |
+| 5. 主线程补 commit（沙箱拦了 `.git/`） | Claude | `ohaze` |
 | 5. 审查 git diff vs plan | Claude | `ohaze` + `superpowers:code-reviewer` |
-| 6. 修复（如审查不通过） | Codex `--resume`（最多 3 次） | `codex` 插件 |
-| 7. finishing（merge / PR） | Claude | `superpowers` |
-
-一条 `/ohaze:ship "做什么"` 命令端到端跑完。
+| 6. 修复（如审查不通过，最多 3 次） | Codex `--resume` | `codex` 插件 |
+| 7. finishing（5 选项菜单，含"继续修改"） | Claude | `ohaze` |
 
 ## 前置依赖
 
-- [superpowers](https://github.com/obra/superpowers) plugin
-- [codex](https://github.com/openai/codex) plugin（含 `codex-companion`）
+### 1. 必装的两个插件
 
-```bash
+```text
 /plugin install superpowers@claude-plugins-official
 /plugin install codex@openai-codex
 ```
 
+### 2. 必加的一条权限（关键）
+
+ohaze 需要从 subagent 内调 `codex-companion.mjs`，subagent 没有交互式权限弹框，所以必须**预先**在 `~/.claude/settings.json` 的 `permissions.allow` 加：
+
+```json
+"Bash(node:*)"
+```
+
+不加这条插件还是能跑（有 fallback），但每次都走"主线程代为派发"的兜底路径，慢且不优雅。
+
+### 3. 可选：`gh` 命令行
+
+`/ohaze:status` 会用 `gh` 拉远端 PR 列表，没装也能跑（自动跳过该段输出）。
+
 ## 安装
 
-ohaze 本身是一个 Claude Code marketplace（仓库即 marketplace，里面只有一个 plugin）。
+ohaze 是一个 single-plugin marketplace（仓库根即 marketplace）。
 
-**方式 A：从 GitHub 安装（推送后可用）**
+**从 GitHub 安装（推荐）**
 
 ```text
 /plugin marketplace add muling-dev/ohaze
 /plugin install ohaze@ohaze
 ```
 
-**方式 B：本地路径安装（开发期）**
+**本地路径安装（开发期）**
 
 ```text
 /plugin marketplace add /Users/apple/Project/ohaze
 /plugin install ohaze@ohaze
 ```
 
-安装后两个命令立即可用：`/ohaze:ship` 和 `/ohaze:ship-review`。
+安装后 4 个命令立即可用。
 
 ## 命令清单
 
 | 命令 | 作用 |
 |---|---|
-| `/ohaze:ship "需求"` | 端到端：brainstorm → worktree → plan → Codex 后台执行 |
-| `/ohaze:ship-review [--more]` | Codex 跑完后触发：审查 → 重试上限 3 → 5 选项 finishing 菜单 |
+| `/ohaze:ship "需求"` | 端到端：brainstorm → worktree → plan → Codex 后台派发 |
+| `/ohaze:ship-review [--more]` | Codex 跑完后触发：补 commit → 审查（重试上限 3）→ 5 选项 finishing |
 | `/ohaze:ship-finish [--skip-review]` | 续跑：从"保持现状"或"自己改"状态恢复，可选再 review，进 finishing |
 | `/ohaze:status` | 跨 worktree 工作流总览：哪个在跑、哪个等审查、哪个 stale |
 
@@ -65,7 +77,7 @@ ohaze 本身是一个 Claude Code marketplace（仓库即 marketplace，里面�
 ```text
 /ohaze:ship 给 hazeflow 加用户登录页
 
-# Claude 走 brainstorm + worktree + plan 后把整份 plan 后台扔给 Codex
+# Claude 走 brainstorm + worktree + plan，把整份 plan 后台扔给 Codex
 # 提示用 /codex:status 看进度
 
 /ohaze:ship-review
@@ -88,33 +100,60 @@ ohaze 本身是一个 Claude Code marketplace（仓库即 marketplace，里面�
 ```
 
 选 5 后子菜单：
-- a) Codex 续跑 (`--resume`，沿用同一 thread)
-- b) Claude 主线程直接改 (改名/加注释/单行 fix)
-- c) 我自己改 (退出，手改完跑 `/ohaze:ship-finish`)
+
+- **a) Codex 续跑**（`--resume`，沿用同一 Codex thread，上下文不丢）
+- **b) Claude 主线程直接改**（改名、加注释、单行 fix 等小事最适合）
+- **c) 我自己改**（退出，去 worktree 手改完跑 `/ohaze:ship-finish` 回来）
+
+改完默认建议再跑一次 review，确认没破，循环回菜单。
 
 ### 跨 worktree 总览
 
 ```text
 /ohaze:status
 
-# 输出:
-# 项目: myproject
-# 📍 主目录    main      干净
+# 输出示例：
+# 项目: myproject (~/Project/myproject)
+#
+# 📍 主目录    main      ✅ 干净
 # 🔧 worktrees:
-#   feat-login   分支:feat/login    🟡 Codex 跑中 (run_id, 4m)
-#   fix-auth     分支:fix/auth      🟢 等审查
-#   experiment-x 分支:experiment/x  🟡 stale (7+ 天)
-# 📊 远端 PRs (gh): #42 ...
+#   feat+login        分支:worktree-feat+login    🟡 Codex 跑中 (task-xxx, 4m)
+#   fix+auth-bug      分支:worktree-fix+auth      🟢 等审查
+#   experiment+cache  分支:worktree-experiment+cache  🟡 stale (7+ 天)
+# 📊 远端 PRs (gh): #42 feat: payment integration
 ```
 
-## 设计决策（V1）
+> ℹ️ worktree 路径和分支命名由 superpowers 决定（当前版本用 `.claude/worktrees/feat+<name>` 和 `worktree-feat+<name>`）。
 
-- 执行粒度：**端到端**，整份 plan 一次性给 Codex
-- Codex 模式：默认 `--background --write`
-- 审查策略：Codex 完成后 `superpowers:code-reviewer` 自动审查
-- 审查重试：失败 → Codex `--resume`，上限 3 次
+## 设计决策（V1.5）
 
-详细见 [CLAUDE.md](CLAUDE.md)。
+- **执行粒度**：整份 plan 一次性给 Codex（端到端）
+- **Codex 模式**：默认 `--background --write`
+- **commit 处理**：Codex 沙箱拦 `.git/`，由主线程在 review 前用 plan 指定的 commit message 统一补
+- **审查策略**：Codex 完成后 `superpowers:code-reviewer` 子 agent 自动审查
+- **审查重试**：失败送回 Codex `--resume`，上限 3 次
+- **finishing**：ohaze 自己实现 5 选项菜单（不调 superpowers:finishing-a-development-branch），多出"继续修改"分支
+- **modify 循环**：用户主动触发，不计入 3 次审查重试
+
+## 工作原理
+
+1. `/ohaze:ship` 顺序调超级 powers 的 brainstorming → using-git-worktrees → writing-plans
+2. plan 生成后，`ohaze:plan-to-codex-prompt` skill 把 plan.md 包成 Codex 能理解的结构化 XML（含完整 plan 内容 + completeness/verification/grounding/safety 契约）
+3. `ohaze:codex-executor` skill 派 `codex:codex-rescue` subagent（Path A）或直接 Bash 调 codex-companion（Path B fallback）
+4. Codex 后台跑，写代码 + 跑测试，但不 commit（沙箱限制）
+5. `/ohaze:ship-review` 触发后，主线程先按 plan 指定的 message 补 commit，再派 reviewer subagent
+6. PASS → 进 5 选项菜单；FAIL → `codex:rescue --resume` 把 issues 送回去修
+7. 选 modify → 进子流程；选其他 → push/PR/keep/discard
+
+详细见 [`plugins/ohaze/`](plugins/ohaze/) 下的 commands 和 skills。
+
+## 路线图
+
+- [x] V1：核心 7 阶段闭环
+- [x] V1.1：4 个 bug 修复（writing-plans 菜单截断 / Codex bash 权限 / 沙箱 commit 拦截 / worktree 跳过）
+- [x] V1.5：`/ohaze:status` + finishing modify 选项 + `/ohaze:ship-finish`
+- [ ] V2：Obsidian 同步（spec/plan/progress 镜像到 vault）
+- [ ] V3：tool-router（按任务复杂度自动路由 Codex / Claude / Gemini）
 
 ## License
 
