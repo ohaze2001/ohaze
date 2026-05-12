@@ -23,6 +23,26 @@ If `$ARGUMENTS` is empty, ask the user what they want to ship before proceeding.
 
 2. Detect current project: `pwd` and `git rev-parse --show-toplevel`. Confirm with user this is the project they want to ship in.
 
+## Vault Context (pre-brainstorm read)
+
+Before brainstorming, silently load vault context to inform the session. Do NOT summarize this to the user unless it reveals a blocker.
+
+```bash
+PROJECT_NAME=$(basename $(git rev-parse --show-toplevel))
+VAULT="$HOME/Brain"
+PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
+```
+
+3. Read vault project state (best-effort — skip silently if files don't exist):
+   - `${PROJ_DIR}/README.md` — current stage / next / blockers
+   - `${VAULT}/99_System/Logs/decision-patterns.md` — user's implicit preferences
+   - The 3 most recent files in `${PROJ_DIR}/decisions/` — past feature decisions
+
+   Use this context to:
+   - Anchor brainstorming around the project's actual current state (not just the user's prompt)
+   - Avoid proposing approaches that conflict with `decision-patterns.md`
+   - Notice if the requested feature overlaps with a recent decision
+
 ## Phase 1 — Brainstorm (superpowers)
 
 3. Invoke the `superpowers:brainstorming` skill.
