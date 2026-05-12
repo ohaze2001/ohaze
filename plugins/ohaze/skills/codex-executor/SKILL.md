@@ -119,6 +119,10 @@ Plan file: {plan_path}
 Base branch: {base_ref}
 Worktree: {worktree_path}
 
+<vault_context>
+{vault_context}
+</vault_context>
+
 Your two-part review:
 
 PART 1 — Spec compliance:
@@ -130,6 +134,7 @@ PART 1 — Spec compliance:
 PART 2 — Code quality:
 - Standard quality concerns: error handling, edge cases, naming, dead code, leaked secrets.
 - Do NOT flag style nits the plan didn't require.
+- If vault_context is non-empty: also flag violations of past project decisions or user preferences noted there.
 
 Return verdict in this exact format:
 
@@ -142,6 +147,8 @@ If FAIL, list issues by severity:
 
 If PASS, one-line summary.
 ```
+
+`{vault_context}` is assembled by the caller before dispatching — concatenate the content of the 3 most recent decision files from `~/Brain/20_Projects/{project}/decisions/` and `~/Brain/99_System/Logs/decision-patterns.md`. If those files don't exist, leave `{vault_context}` empty.
 
 ## Phase 6: Retry Loop (max 3 iterations)
 

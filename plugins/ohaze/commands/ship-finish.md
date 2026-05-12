@@ -28,6 +28,21 @@ Resume finishing for a previously paused ship.
 
 5. `cd <worktree_path>` for the rest of this command (so commits land in the right place).
 
+## Vault Context (pre-finish read)
+
+Silently load vault context before proceeding. Do NOT summarize to the user.
+
+```bash
+PROJECT_NAME=$(basename $(git rev-parse --show-toplevel 2>/dev/null || echo ""))
+VAULT="$HOME/Brain"
+```
+
+6. Read (best-effort — skip silently if missing):
+   - `${VAULT}/20_Projects/${PROJECT_NAME}/discussions/<feature>.md` — the running log of this exact ship, to understand what decisions and pauses happened before this finish
+   - `${VAULT}/20_Projects/${PROJECT_NAME}/progress.md` — recent completions, so you can give the user a meaningful status update ("this is your 3rd feature shipped this week")
+
+   Use this context only to inform the finishing conversation — e.g., mention if there were multiple review retries, or if the user has been on a shipping streak.
+
 ## Step 1 — Detect uncommitted changes (likely from option 5c self-edit)
 
 ```bash

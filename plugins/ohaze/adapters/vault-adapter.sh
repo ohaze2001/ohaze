@@ -440,6 +440,32 @@ EOF
     "- **详情**: [[decisions/${feature}]]"
   log "E5: updated progress.md"
 
+  # ── 同步更新 README.md 的 stage/next/last_active ────────────────
+  # 只有真正完成（非暂停）才更新
+  local readme_path="${VAULT}/20_Projects/${proj}/README.md"
+  if [[ "$state" == "running" && -f "$readme_path" ]]; then
+    # 提取 feature 的语义描述（去掉日期前缀 YYYY-MM-DD-）
+    local feature_desc
+    feature_desc=$(echo "$feature" | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-//')
+
+    # 更新 frontmatter 中的 last_active 和 milestone 字段（如果有）
+    sed -i '' "s/^last_active: .*/last_active: ${TODAY}/" "$readme_path" 2>/dev/null || true
+
+    # 在 ## 当前阶段 或 ## Next 后追加已完成记录（如果 section 存在）
+    if grep -q "^## 当前阶段\|^## Next\|^## 当前目标" "$readme_path" 2>/dev/null; then
+      # 在文件末尾追加一个已完成记录区块（幂等：只追加，不覆盖原有内容）
+      if ! grep -q "ohaze-shipped" "$readme_path" 2>/dev/null; then
+        vault_append "$readme_path" \
+          "" \
+          "## ohaze 完成记录" \
+          ""
+      fi
+      vault_append "$readme_path" \
+        "- \`${TODAY}\` ${feature_desc}（retries: ${retries:-0}，commits: ${commit_count}）→ [[decisions/${feature}]]"
+    fi
+    log "E5: updated README.md for ${proj}"
+  fi
+
   brain_commit "finish ${proj}/${feature}"
 }
 

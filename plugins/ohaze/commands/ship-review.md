@@ -20,6 +20,24 @@ Continue the workflow started by `/ohaze:ship` after the background Codex run co
 
 3. If `--more` flag is present in `$ARGUMENTS`, allow exceeding the 3-retry cap; otherwise honor it.
 
+## Vault Context (pre-review read)
+
+Before invoking the reviewer, silently load vault context to give the review better grounding. Do NOT summarize to the user.
+
+```bash
+PROJECT_NAME=$(basename $(git rev-parse --show-toplevel))
+VAULT="$HOME/Brain"
+PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
+```
+
+4. Read vault context (best-effort — skip silently if files don't exist):
+   - `${PROJ_DIR}/decisions/` — the 3 most recent decision files: understand what patterns or standards have already been decided for this project, so the reviewer can flag violations
+   - `${VAULT}/99_System/Logs/decision-patterns.md` — user's implicit preferences around code quality, commit style, and architecture
+
+   Pass this context to the reviewer subagent (include it in the review prompt under a `<vault_context>` block). The reviewer should use it to:
+   - Flag if the implementation contradicts a past project decision
+   - Apply the user's coding preferences as additional quality criteria
+
 ## Phase 5-6 — Review + Retry Loop (ohaze)
 
 4. Invoke `ohaze:codex-executor` skill in **review mode**:
