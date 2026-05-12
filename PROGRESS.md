@@ -119,3 +119,10 @@ subagent 没有交互式权限弹框，必须预先放行。
 /plugin marketplace add muling-dev/ohaze
 /plugin install ohaze@ohaze
 ```
+
+## 2026-05-12
+- 完成：vault-adapter.sh 实现（E1/E2/E4/E_pause/E5 全部跑通）
+- 完成：ship.md 加 Vault Context 读取步骤（brainstorm 前静默加载项目状态）
+- 完成：~/.claude/settings.json 注册全局 hooks（PostToolUse Write + PreToolUse Bash）
+- 架构：hooks 代码强约束，LLM 不参与写入决策；adapter 脚本在 ohaze 插件目录
+- 待处理：推送更新到 GitHub remote（muling-dev/ohaze）
