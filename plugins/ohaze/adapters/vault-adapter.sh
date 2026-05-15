@@ -197,7 +197,7 @@ handle_on_write() {
 _handle_shipjson() {
   local file_path="$1" content="$2"
 
-  local worktree_path plan_path spec_path state retries codex_run_id started_at
+  local worktree_path plan_path spec_path state retries codex_run_id started_at linked_todo
   worktree_path=$(parse_json "$content" worktree_path)
   plan_path=$(parse_json "$content" plan_path)
   spec_path=$(parse_json "$content" spec_path)
@@ -205,6 +205,7 @@ _handle_shipjson() {
   retries=$(parse_json "$content" retries)
   codex_run_id=$(parse_json "$content" codex_run_id)
   started_at=$(parse_json "$content" started_at)
+  linked_todo=$(parse_json "$content" linked_todo)
 
   [[ -z "$worktree_path" ]] && { log "no worktree_path, skip"; return 0; }
 
@@ -297,17 +298,22 @@ _handle_shipjson() {
     fi
   fi
 
-  # 更新 sync state
+  # 更新 sync state（merge，不覆盖已有的 last_verdict_key / ship_result）
+  # 用 argv 传值避免 shell 引号注入
   local new_sync
   new_sync=$(python3 -c "
-import json
-print(json.dumps({
-    'discussions_path': '$discussions_path',
-    'codex_run_id': '$codex_run_id',
-    'retries': $cur_retries,
-    'prev_state': '$state'
-}))
-" 2>/dev/null || echo "{}")
+import json, sys
+existing = json.loads(sys.argv[1] or '{}')
+existing['discussions_path'] = sys.argv[2]
+existing['codex_run_id']     = sys.argv[3]
+existing['retries']          = int(sys.argv[4] or 0)
+existing['prev_state']       = sys.argv[5]
+# linked_todo 只在首次有值时写入，避免后续 ship.json 更新（不带该字段）清掉
+lt = sys.argv[6]
+if lt and lt != 'null':
+    existing['linked_todo'] = lt
+print(json.dumps(existing))
+" "$sync_json" "$discussions_path" "$codex_run_id" "$cur_retries" "$state" "$linked_todo" 2>/dev/null || echo "$sync_json")
   write_sync_state "$ohaze_dir" "$new_sync"
 
   if [[ "$vault_changed" == true ]]; then
@@ -603,24 +609,29 @@ EOF
   fi
 
   # ── 更新源项目 CLAUDE.md 的当前目标 section ────────────────────────
-  # 只在真正完成（push / pr / discard）时才改源码 CLAUDE.md
-  if [[ "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" || "${ship_action:-}" == "discard" ]]; then
+  # 只在真正交付（push / pr）时打勾；discard 不打勾（任务没真做完）
+  # 用 linked_todo 精确匹配（ship.md Step A 已由用户选定，避免模糊匹配误伤/漏命中）
+  local linked_todo
+  linked_todo=$(parse_json "$sync_json" linked_todo)
+  if [[ ( "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" ) && -n "$linked_todo" ]]; then
     local source_claude
-    # worktree_path → 主项目根（去掉 .worktrees/xxx）
     source_claude=$(echo "$worktree_path" | sed 's|/.worktrees/.*||')/CLAUDE.md
     if [[ -f "$source_claude" ]]; then
-      local feature_desc_short feature_desc_escaped
-      feature_desc_short=$(echo "$feature" | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-//')
-      # escape sed BRE 元字符（\ / . * [ ] ^ $ &）防注入
-      feature_desc_escaped=$(python3 -c '
-import sys
-s = sys.argv[1]
-special = r"\/.*[]^$&"
-print("".join(("\\" + c) if c in special else c for c in s))
-' "$feature_desc_short" 2>/dev/null || echo "$feature_desc_short")
-      # 在匹配 feature 描述的行把第一个 - [ ] 改为 - [x]（仅命中第一处，避免误改其他 todo）
-      sed -i '' "/${feature_desc_escaped}/s/- \[ \]/- [x]/" "$source_claude" 2>/dev/null || true
-      log "E5: updated source CLAUDE.md for ${proj}"
+      # 用 python 做精确字面替换（不走 sed 正则，避免 todo 文本里有 . / * 等被解释）
+      python3 -c '
+import sys, pathlib
+path = pathlib.Path(sys.argv[1])
+todo = sys.argv[2]
+needle = f"- [ ] {todo}"
+replacement = f"- [x] {todo}"
+text = path.read_text()
+if needle in text:
+    path.write_text(text.replace(needle, replacement, 1))
+    sys.exit(0)
+sys.exit(1)
+' "$source_claude" "$linked_todo" 2>/dev/null && \
+        log "E5: ticked CLAUDE.md todo: $linked_todo" || \
+        log "E5: linked_todo not found in CLAUDE.md (was it edited?): $linked_todo"
     fi
   fi
 

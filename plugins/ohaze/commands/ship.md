@@ -125,6 +125,26 @@ DO NOT auto-poll. DO NOT trigger Phase 5 in this same `/ohaze:ship` invocation. 
 
 To make `/ohaze:ship-review` self-sufficient (it runs in a possibly-different session), write a small handoff file at the end of Phase 4.
 
+### Step A — Link to a CLAUDE.md todo (precision auto-tick)
+
+Before writing the handoff, ask the user which `- [ ]` in the source project's CLAUDE.md (if any) this ship corresponds to. When the ship completes, vault-adapter will tick exactly that line — no fuzzy matching.
+
+1. Locate the **source project** CLAUDE.md (the main repo, not the worktree). From the worktree path strip `/.worktrees/<name>`:
+   ```bash
+   SOURCE_ROOT=$(echo "$worktree_path" | sed 's|/.worktrees/.*||')
+   PENDING=$(grep -nE '^- \[ \] ' "${SOURCE_ROOT}/CLAUDE.md" 2>/dev/null || true)
+   ```
+
+2. If `$PENDING` is empty, set `linked_todo: null` and proceed to Step B. Don't bother asking.
+
+3. Otherwise use `AskUserQuestion` with options = each pending todo text (strip the `- [ ] ` prefix; keep the rest verbatim including any leading marks like `☆`) + a final option **"无对应 todo (跳过)"**. Question header: *"这次 ship 对应 CLAUDE.md 哪条 todo?"*.
+
+4. Capture the user's choice as `linked_todo`:
+   - If they picked a real todo: store the **exact text without the `- [ ] ` prefix** (so adapter can do `sed s/- \[ \] <exact text>/- [x] <exact text>/`).
+   - If they picked "无对应 todo (跳过)": store JSON `null`.
+
+### Step B — Write the handoff file
+
 **IMPORTANT — order of operations** (the `Write` tool does NOT create parent directories, so the dir MUST exist first):
 
 1. Run `mkdir -p .ohaze` via Bash (relative to the worktree path).
@@ -143,7 +163,8 @@ Handoff file shape:
   "started_at": "<ISO timestamp>",
   "retries": 0,
   "codex_run_id": "<task-xxx-yyy if Path A succeeded, else fill in after Path B>",
-  "state": "running"
+  "state": "running",
+  "linked_todo": "<exact todo text from Step A, or null>"
 }
 ```
 
