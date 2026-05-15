@@ -121,15 +121,18 @@ cat > <ohaze_dir>/review-verdict.json << 'EOF'
   "verdict": "<PASS|FAIL>",
   "issues": [
     "<CRITICAL: issue — file:line>",
-    "<IMPORTANT: issue — file:line>"
+    "<IMPORTANT: issue — file:line>",
+    "<ADVERSARIAL: design risk — file:line>"
   ]
 }
 EOF
 ```
 
 - `<ohaze_dir>` is the `.ohaze/` directory inside the worktree (same dir as `current-ship.json`).
-- For PASS: `issues` is an empty array `[]`.
-- For FAIL: include only CRITICAL and IMPORTANT lines (not NITs).
+- **Include all CRITICAL, IMPORTANT, and ADVERSARIAL findings in `issues`** with their prefix preserved. Skip NITs.
+- For PASS without any ADVERSARIAL findings: `issues` is `[]`.
+- For PASS with ADVERSARIAL findings: include them — vault adapter surfaces them in discussions as advisory.
+- For FAIL: include all CRITICAL/IMPORTANT/ADVERSARIAL entries (the user needs the full picture before retry).
 - This write triggers the `PostToolUse(Write)` hook → `vault-adapter.sh on-write` → `_handle_verdict`.
 - Do this in **every** iteration of the retry loop, not just on first verdict.
 
@@ -146,7 +149,7 @@ Worktree: {worktree_path}
 {vault_context}
 </vault_context>
 
-Your two-part review:
+Your three-part review:
 
 PART 1 — Spec compliance:
 - Read the plan file in full.
@@ -159,16 +162,32 @@ PART 2 — Code quality:
 - Do NOT flag style nits the plan didn't require.
 - If vault_context is non-empty: also flag violations of past project decisions or user preferences noted there.
 
+PART 3 — Adversarial review (design challenge):
+This is NOT a stricter pass over PART 1/2. This is a different lens entirely. Even if the implementation is correct and clean, ask whether the chosen approach is the right one.
+
+- Challenge the chosen approach: was there a simpler, safer, or more maintainable alternative the plan rejected or didn't consider?
+- Challenge the design: are abstractions earning their complexity? Premature optimizations or speculative generality? Over-engineered for the stated requirement?
+- Challenge the assumptions: what does this code assume about inputs, runtime, scale, concurrency, or future requirements that could break under real-world conditions?
+- Challenge the tradeoffs: are tradeoffs documented? Are they the right ones?
+- Findings here go under `ADVERSARIAL:` regardless of severity. They surface design risks the user should consciously accept or revise.
+- **ADVERSARIAL findings do NOT cause FAIL by themselves**. They are advisory. PART 1/2 issues are what gate ship.
+
 Return verdict in this exact format:
 
 VERDICT: PASS or FAIL
+
+VERDICT is FAIL **if and only if** at least one CRITICAL or IMPORTANT issue exists from PART 1/2. ADVERSARIAL findings alone never cause FAIL.
 
 If FAIL, list issues by severity:
 - CRITICAL: <issue> — <file:line>
 - IMPORTANT: <issue> — <file:line>
 - NIT: <issue> — <file:line>
 
-If PASS, one-line summary.
+ADVERSARIAL findings (always include if any, regardless of verdict):
+- ADVERSARIAL: <design risk / approach concern> — <file:line or "design-wide">
+
+If PASS with no ADVERSARIAL findings: one-line summary.
+If PASS with ADVERSARIAL findings: one-line summary followed by the ADVERSARIAL list.
 ```
 
 `{vault_context}` is assembled by the caller before dispatching — concatenate the content of the 3 most recent decision files from `~/Brain/20_Projects/{project}/decisions/` and `~/Brain/99_System/Logs/decision-patterns.md`. If those files don't exist, leave `{vault_context}` empty.
@@ -186,7 +205,7 @@ Track retry counter starting at 0.
      The previous Codex run completed but the Claude-side reviewer found these issues. Fix them in the same worktree without changing anything else.
 
      Issues to fix:
-     {bullet list of CRITICAL and IMPORTANT issues with file:line}
+     {bullet list of CRITICAL and IMPORTANT issues with file:line — DO NOT include ADVERSARIAL findings here; those are design-level concerns for the user to decide on, not for Codex to auto-fix}
      </task>
 
      <action_safety>

@@ -353,15 +353,21 @@ _handle_verdict() {
     return 0
   fi
 
-  local issues_md=""
-  if [[ "$verdict" == "FAIL" ]]; then
-    issues_md=$(python3 -c "
+  # 把 issues 按 ADVERSARIAL / 其他 拆开，方便分别落盘
+  # 输出格式：第 1 行 = blocking issues markdown；用 \x1f 分隔后是 adversarial markdown
+  local split_output
+  split_output=$(python3 -c "
 import json, sys
 d = json.loads(sys.argv[1])
-issues = d.get('issues', [])
-print('\n'.join('  - ' + i for i in issues) if issues else '  （无详情）')
+issues = d.get('issues', []) or []
+blockers = [i for i in issues if not i.lstrip().startswith('ADVERSARIAL')]
+adv      = [i for i in issues if i.lstrip().startswith('ADVERSARIAL')]
+b = '\n'.join('  - ' + i for i in blockers) if blockers else '  （无详情）'
+a = '\n'.join('  - ' + i for i in adv) if adv else ''
+print(b + '\x1f' + a)
 " "$content" 2>/dev/null || echo "  （解析失败）")
-  fi
+  local blockers_md="${split_output%%$'\x1f'*}"
+  local adv_md="${split_output##*$'\x1f'}"
 
   if [[ "$verdict" == "PASS" ]]; then
     vault_append "$discussions_path" \
@@ -370,6 +376,12 @@ print('\n'.join('  - ' + i for i in issues) if issues else '  （无详情）')
       "" \
       "- **时间**: \`${NOW}\`" \
       "- **结论**: PASS"
+    # PASS 也可能带 ADVERSARIAL（advisory），有就写
+    if [[ -n "$adv_md" ]]; then
+      vault_append "$discussions_path" \
+        "- **对抗式发现（仅供参考，不阻塞）**:" \
+        "${adv_md}"
+    fi
   else
     vault_append "$discussions_path" \
       "" \
@@ -378,7 +390,12 @@ print('\n'.join('  - ' + i for i in issues) if issues else '  （无详情）')
       "- **时间**: \`${NOW}\`" \
       "- **结论**: FAIL" \
       "- **问题列表**:" \
-      "${issues_md}"
+      "${blockers_md}"
+    if [[ -n "$adv_md" ]]; then
+      vault_append "$discussions_path" \
+        "- **对抗式发现（仅供参考，不阻塞）**:" \
+        "${adv_md}"
+    fi
   fi
 
   # 把 last_verdict_key 写回 sync state（去重用）

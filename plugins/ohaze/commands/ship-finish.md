@@ -84,6 +84,17 @@ If 1:
 
 If 2: continue to Step 3 directly.
 
+## Step 2.5 — Surface ADVERSARIAL findings (if any)
+
+If Step 2 ran a re-review, or if the prior verdict file at `<worktree>/.ohaze/review-verdict.json` exists, check its `issues` for entries starting with `ADVERSARIAL:`. Surface them to the user **without commentary** before the menu:
+
+```
+⚠️ Reviewer 提出的对抗式发现（不阻塞, 设计层判断）：
+  - ADVERSARIAL: ...
+```
+
+Then proceed. If no ADVERSARIAL findings, skip silently.
+
 ## Step 3 — Finishing Menu
 
 Present the same 5-option menu as `/ohaze:ship-review`:

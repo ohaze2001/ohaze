@@ -54,6 +54,23 @@ PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
 
    Wait for user choice.
 
+## Phase 6.5 — Surface ADVERSARIAL findings (if any)
+
+Before the finishing menu, check whether the latest review's `issues` array (in the verdict you just received from codex-executor, or read back from `.ohaze/review-verdict.json`) contains any lines prefixed `ADVERSARIAL:`.
+
+If yes, print them verbatim to the user **without commentary**:
+
+```
+⚠️ Reviewer 提出的对抗式发现（不阻塞 ship, 设计层判断, 你来决定要不要处理）：
+
+  - ADVERSARIAL: <design risk> — <file:line>
+  - ADVERSARIAL: <design risk> — <file:line>
+```
+
+Then proceed to Phase 7. Do not auto-loop into modify — the user will pick option 5 if they want to act on these.
+
+If no ADVERSARIAL findings, skip this section silently.
+
 ## Phase 7 — Finishing Menu (ohaze owns this — DO NOT invoke superpowers:finishing-a-development-branch directly)
 
 Once review verdict is PASS (or user accepted current state in step 5), present this 5-option menu:
