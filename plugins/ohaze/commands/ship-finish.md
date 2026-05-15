@@ -97,11 +97,11 @@ Present the same 5-option menu as `/ohaze:ship-review`:
 5. 继续修改 (小改动)
 ```
 
-The behavior of each option is **identical to `/ohaze:ship-review`'s Phase 7**. Reuse that logic — do not duplicate it.
+The behavior of each option is **identical to `/ohaze:ship-review`'s Phase 7**. Reuse that logic — do not duplicate it. This includes writing `.ohaze/ship-result.json` before each terminal action (options 1/2/4) as described there.
 
 ## Cleanup
 
-- Options 1 / 2 / 4: terminal, remove handoff file at the end.
+- Options 1 / 2 / 4: write `ship-result.json` first (vault hook), then remove handoff file.
 - Option 3: keep handoff (state = "kept"), tell user how to come back.
 - Option 5: enter modify sub-flow, loop back to menu.
 

@@ -110,6 +110,29 @@ Codex's sandbox blocks `.git/` writes (this is by design — see plan-to-codex-p
    )
    ```
 
+### Phase 5.3: Write review-verdict.json (vault hook trigger)
+
+After the reviewer returns, **immediately** write the verdict to disk so the vault hook can capture it:
+
+```bash
+cat > <ohaze_dir>/review-verdict.json << 'EOF'
+{
+  "iteration": <current_retry_count>,
+  "verdict": "<PASS|FAIL>",
+  "issues": [
+    "<CRITICAL: issue — file:line>",
+    "<IMPORTANT: issue — file:line>"
+  ]
+}
+EOF
+```
+
+- `<ohaze_dir>` is the `.ohaze/` directory inside the worktree (same dir as `current-ship.json`).
+- For PASS: `issues` is an empty array `[]`.
+- For FAIL: include only CRITICAL and IMPORTANT lines (not NITs).
+- This write triggers the `PostToolUse(Write)` hook → `vault-adapter.sh on-write` → `_handle_verdict`.
+- Do this in **every** iteration of the retry loop, not just on first verdict.
+
 ### Review prompt template
 
 ```

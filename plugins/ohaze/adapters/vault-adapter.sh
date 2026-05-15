@@ -156,27 +156,42 @@ write_sync_state() {
   echo "$json" > "${ohaze_dir}/.vault-sync-state.json"
 }
 
-# ─── E1-E_pause: on-write handler ─────────────────────────────────────
-# 触发：LLM 用 Write 工具写 .ohaze/current-ship.json
+# ─── on-write dispatcher ──────────────────────────────────────────────
+# 触发：LLM 用 Write 工具写 .ohaze/ 下任意文件
 
 handle_on_write() {
   local stdin_json
   stdin_json=$(cat)
 
-  # 提取 file_path
-  local file_path
+  local file_path content
   file_path=$(parse_nested "$stdin_json" tool_input file_path)
-
-  # 只处理 current-ship.json
-  [[ "$file_path" != *".ohaze/current-ship.json" ]] && return 0
-  log "on-write triggered: $file_path"
-
-  # 提取写入内容（新 handoff JSON）
-  local content
   content=$(parse_nested "$stdin_json" tool_input content)
-  [[ -z "$content" ]] && { log "empty content, skip"; return 0; }
+  [[ -z "$content" ]] && return 0
 
-  # 解析 handoff 字段
+  case "$file_path" in
+    *".ohaze/current-ship.json")
+      log "on-write: current-ship.json"
+      _handle_shipjson "$file_path" "$content"
+      ;;
+    *".ohaze/review-verdict.json")
+      log "on-write: review-verdict.json"
+      _handle_verdict "$file_path" "$content"
+      ;;
+    *".ohaze/ship-result.json")
+      log "on-write: ship-result.json"
+      _handle_result "$file_path" "$content"
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+# ─── E1-E_pause: current-ship.json handler ────────────────────────────
+
+_handle_shipjson() {
+  local file_path="$1" content="$2"
+
   local worktree_path plan_path spec_path state retries codex_run_id started_at
   worktree_path=$(parse_json "$content" worktree_path)
   plan_path=$(parse_json "$content" plan_path)
@@ -295,6 +310,84 @@ print(json.dumps({
   fi
 }
 
+# ─── review-verdict.json handler (#3) ────────────────────────────────
+# 触发：codex-executor 写 .ohaze/review-verdict.json 后
+# 内容：{iteration, verdict, issues:[...]}
+
+_handle_verdict() {
+  local file_path="$1" content="$2"
+  local ohaze_dir
+  ohaze_dir=$(dirname "$file_path")
+
+  local verdict iteration
+  verdict=$(parse_json "$content" verdict)
+  iteration=$(parse_json "$content" iteration)
+  [[ -z "$verdict" ]] && { log "verdict: empty verdict field, skip"; return 0; }
+
+  # 从 sync state 拿 discussions_path
+  local sync_json discussions_path
+  sync_json=$(read_sync_state "$ohaze_dir")
+  discussions_path=$(parse_json "$sync_json" discussions_path)
+  [[ -z "$discussions_path" || ! -f "$discussions_path" ]] && {
+    log "verdict: no discussions doc yet, skip"
+    return 0
+  }
+
+  local issues_md=""
+  if [[ "$verdict" == "FAIL" ]]; then
+    issues_md=$(python3 -c "
+import json, sys
+d = json.loads(sys.argv[1])
+issues = d.get('issues', [])
+print('\n'.join('  - ' + i for i in issues) if issues else '  （无详情）')
+" "$content" 2>/dev/null || echo "  （解析失败）")
+  fi
+
+  if [[ "$verdict" == "PASS" ]]; then
+    vault_append "$discussions_path" \
+      "" \
+      "## 审查通过 (iteration ${iteration:-?})" \
+      "" \
+      "- **时间**: \`${NOW}\`" \
+      "- **结论**: PASS"
+  else
+    vault_append "$discussions_path" \
+      "" \
+      "## 审查未通过 (iteration ${iteration:-?})" \
+      "" \
+      "- **时间**: \`${NOW}\`" \
+      "- **结论**: FAIL" \
+      "- **问题列表**:" \
+      "${issues_md}"
+  fi
+
+  log "verdict: appended ${verdict} (iter ${iteration}) to discussions"
+  brain_commit "verdict $(basename $(dirname "$ohaze_dir"))"
+}
+
+# ─── ship-result.json handler (#2) ────────────────────────────────────
+# 触发：ship-review / ship-finish 在 finishing 时写 .ohaze/ship-result.json
+# 内容：{action, branch, remote?, pr_url?, pr_number?}
+
+_handle_result() {
+  local file_path="$1" content="$2"
+  local ohaze_dir
+  ohaze_dir=$(dirname "$file_path")
+
+  # 把 result 存入 sync state，E5 pre-bash 读取用
+  local sync_json new_sync
+  sync_json=$(read_sync_state "$ohaze_dir")
+  new_sync=$(python3 -c "
+import json, sys
+state = json.loads(sys.argv[1])
+result = json.loads(sys.argv[2])
+state['ship_result'] = result
+print(json.dumps(state))
+" "$sync_json" "$content" 2>/dev/null || echo "$sync_json")
+  write_sync_state "$ohaze_dir" "$new_sync"
+  log "result: saved ship-result to sync state"
+}
+
 # ─── E5: pre-bash handler ─────────────────────────────────────────────
 # 触发：LLM 执行 rm .ohaze/current-ship.json 前（PreToolUse）
 # 此时 handoff 文件还在，可以读取
@@ -350,11 +443,28 @@ handle_pre_bash() {
   sync_json=$(read_sync_state "$ohaze_dir")
   discussions_path=$(parse_json "$sync_json" discussions_path)
 
+  # 读 ship_result（由 _handle_result 预存）
+  local ship_result_json ship_action ship_remote ship_pr_url ship_branch
+  ship_result_json=$(parse_json "$sync_json" ship_result)
+  if [[ -n "$ship_result_json" && "$ship_result_json" != "None" ]]; then
+    ship_action=$(parse_json "$ship_result_json" action)
+    ship_remote=$(parse_json "$ship_result_json" remote)
+    ship_pr_url=$(parse_json "$ship_result_json" pr_url)
+    ship_branch=$(parse_json "$ship_result_json" branch)
+  fi
+
   # 确定最终结果描述
   local disposition="完成"
-  case "$state" in
-    kept)               disposition="暂停保留（未 finish）" ;;
-    self-edit-pending)  disposition="暂停自编辑（未 finish）" ;;
+  case "${ship_action:-}" in
+    push)    disposition="已推送到远端 (${ship_remote:-origin})" ;;
+    pr)      disposition="已创建 PR${ship_pr_url:+: ${ship_pr_url}}" ;;
+    discard) disposition="已丢弃" ;;
+    *)
+      case "$state" in
+        kept)               disposition="暂停保留（未 finish）" ;;
+        self-edit-pending)  disposition="暂停自编辑（未 finish）" ;;
+      esac
+      ;;
   esac
 
   # 获取 commits（worktree 还在）
@@ -393,6 +503,9 @@ related: ${discussion_ref}
 |---|---|
 | 最终结果 | ${disposition} |
 | 完成时间 | ${NOW} |
+| 操作类型 | ${ship_action:-unknown} |
+| 分支 | ${ship_branch:-N/A} |
+| PR 链接 | ${ship_pr_url:-N/A} |
 | 审查重试次数 | ${retries:-0} |
 | Codex run_id | ${codex_run_id:-N/A} |
 | Commits 数量 | ${commit_count} |
@@ -454,16 +567,32 @@ EOF
     # 在 ## 当前阶段 或 ## Next 后追加已完成记录（如果 section 存在）
     if grep -q "^## 当前阶段\|^## Next\|^## 当前目标" "$readme_path" 2>/dev/null; then
       # 在文件末尾追加一个已完成记录区块（幂等：只追加，不覆盖原有内容）
-      if ! grep -q "ohaze-shipped" "$readme_path" 2>/dev/null; then
+      if ! grep -q "shipped-features" "$readme_path" 2>/dev/null; then
         vault_append "$readme_path" \
           "" \
-          "## ohaze 完成记录" \
+          "## 完成记录" \
+          "<!-- shipped-features -->" \
           ""
       fi
       vault_append "$readme_path" \
         "- \`${TODAY}\` ${feature_desc}（retries: ${retries:-0}，commits: ${commit_count}）→ [[decisions/${feature}]]"
     fi
     log "E5: updated README.md for ${proj}"
+  fi
+
+  # ── 更新源项目 CLAUDE.md 的当前目标 section ────────────────────────
+  # 只在真正完成（push / pr / discard）时才改源码 CLAUDE.md
+  if [[ "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" || "${ship_action:-}" == "discard" ]]; then
+    local source_claude
+    # worktree_path → 主项目根（去掉 .worktrees/xxx）
+    source_claude=$(echo "$worktree_path" | sed 's|/.worktrees/.*||')/CLAUDE.md
+    if [[ -f "$source_claude" ]]; then
+      local feature_desc_short
+      feature_desc_short=$(echo "$feature" | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-//')
+      # 在 ## 当前目标 section 中把对应功能的 - [ ] 改为 - [x]（按 feature_desc 模糊匹配）
+      sed -i '' "/.*${feature_desc_short}.*/s/- \[ \]/- [x]/" "$source_claude" 2>/dev/null || true
+      log "E5: updated source CLAUDE.md for ${proj}"
+    fi
   fi
 
   brain_commit "finish ${proj}/${feature}"

@@ -126,3 +126,18 @@ subagent 没有交互式权限弹框，必须预先放行。
 - 完成：~/.claude/settings.json 注册全局 hooks（PostToolUse Write + PreToolUse Bash）
 - 架构：hooks 代码强约束，LLM 不参与写入决策；adapter 脚本在 ohaze 插件目录
 - 待处理：推送更新到 GitHub remote（muling-dev/ohaze）
+- 完成：A — ship-review.md 加 Vault Context 读取 + codex-executor review prompt 注入 <vault_context>
+- 完成：B — E5 时同步更新 vault README.md（ohaze 完成记录区块 + last_active frontmatter）
+- 完成：C — ship-finish.md 加 Vault Context 读取（discussions log + progress.md）
+- 待处理：推送更新到 GitHub remote
+
+## 2026-05-15
+- 完成：vault-adapter.sh — _handle_verdict（review-verdict.json → discussions 追加审查结论）
+- 完成：vault-adapter.sh — _handle_result（ship-result.json → sync state 存储 finishing 选择）
+- 完成：vault-adapter.sh — handle_pre_bash E5 全面升级
+  - ship_result 读取并注入 decisions ADR（action / branch / PR URL 字段）
+  - README marker 修正：ohaze-shipped → shipped-features，section 名 → ## 完成记录
+  - ship 真正完成（push/pr/discard）时自动更新源项目 CLAUDE.md 的 - [ ] → - [x]
+- 完成：codex-executor/SKILL.md — Phase 5.3：review 后写 review-verdict.json 触发 hook
+- 完成：ship-review.md — Options 1/2/4 在 terminal action 前写 ship-result.json
+- 完成：ship-finish.md — 明确 ship-result.json 写入时机说明
