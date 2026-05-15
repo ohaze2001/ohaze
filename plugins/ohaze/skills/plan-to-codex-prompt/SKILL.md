@@ -1,11 +1,11 @@
 ---
 name: plan-to-codex-prompt
-description: Use when handing an ohaze:writing-plans guidance plan to Codex for end-to-end execution. Thin wrapper that embeds the plan in the XML prompt contract that codex:codex-rescue expects.
+description: Use when handing an ohaze:writing-plans guidance plan to Codex for end-to-end execution. Thin wrapper that embeds the plan in the XML prompt contract that `codex exec` (via ohaze:codex-executor) expects.
 ---
 
 # Plan → Codex Prompt
 
-Translate an `ohaze:writing-plans` output (`docs/superpowers/plans/<date>-<feature>.md`) into a complete XML-block prompt for the `codex:codex-rescue` subagent.
+Translate an `ohaze:writing-plans` output (`docs/superpowers/plans/<date>-<feature>.md`) into a complete XML-block prompt that gets piped into `codex exec` by `ohaze:codex-executor`.
 
 `ohaze:writing-plans` already produces a guidance-form plan (behavior contracts + acceptance criteria, no prescriptive code), so **this skill is a thin verbatim wrapper** — no distillation needed. The plan is the contract; Codex picks the implementation.
 
@@ -23,7 +23,7 @@ If the input plan is **not** from `ohaze:writing-plans` (e.g., it's a `superpowe
 
 ## Output contract
 
-Produce a single string ready to be passed as the `task` argument to `codex:codex-rescue`. The string MUST follow this exact XML block layout, in this order:
+Produce a single string ready to be written to a prompt file and piped into `codex exec` by `ohaze:codex-executor`. The string MUST follow this exact XML block layout, in this order:
 
 ```
 <task>
@@ -47,11 +47,11 @@ Skip git commits — see <commit_handling> below.
 </completeness_contract>
 
 <commit_handling>
-You are running inside Codex's `workspace-write` sandbox, which **blocks all writes to `.git/`**. Do NOT run `git add`, `git commit`, `git stash`, or any command that modifies git state. The sandbox will reject it with "Operation not permitted".
+ohaze keeps commit authority at the orchestrator (Claude main session) by convention, not because of sandbox. You technically have permission to `git add` / `git commit` under `danger-full-access`, but **do NOT do it**. The orchestrator commits per-Task using a consistent message style, sometimes splits commits across Tasks based on file overlap, and integrates the commits into the vault-adapter discussions log. Self-committing breaks this pipeline.
 
-For every Task's commit step: skip the actual `git` command. Consider the Task done as long as the code/test changes are written and verification passed. The orchestrator (Claude main session) will commit afterwards.
+For every Task's commit step in the plan: skip the actual `git` command. Consider the Task done as long as the code/test changes are written and verification passed.
 
-In your final report (see <output_report>), set `Commits made: skipped (sandbox blocks .git/, orchestrator will commit)` and provide a suggested commit message **per Task** in the form `<type>(<area>): <one-line>` — the orchestrator may adjust.
+In your final report (see <output_report>), set `Commits made: skipped (orchestrator handles)` and provide a suggested commit message **per Task** in the form `<type>(<area>): <one-line>` — the orchestrator may adjust.
 </commit_handling>
 
 <verification_loop>
@@ -110,7 +110,7 @@ At the end, report in this format:
 - The `{full verbatim contents of plan.md}` slot is non-negotiable for ohaze:writing-plans output. The plan is already the right size and shape (contract form). Do not summarize, reformat, or strip checkboxes.
 - If `plan.md` is over 30,000 characters, embed it as-is anyway — Codex handles long plans fine.
 - If `project_test_command` truly cannot be determined, leave the literal placeholder `{project_test_command}` AND stop before sending; ask the user. Do not guess `npm test` for a project that has no `package.json`.
-- After producing the prompt string, the caller (typically `ohaze:codex-executor` skill) will pass it to `codex:codex-rescue` along with `--background --write` flags.
+- After producing the prompt string, the caller (typically `ohaze:codex-executor` skill) writes it to `<worktree>/.ohaze/codex-prompt.xml` and pipes it into `codex exec --sandbox danger-full-access` running in the background.
 
 ## What this skill does NOT do
 

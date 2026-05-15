@@ -19,63 +19,94 @@ Hand a translated XML prompt to Codex via the `codex` plugin, then run the Claud
 - `base_ref` (required): the git ref Codex's work started from (typically the worktree's parent branch, e.g. `main`).
 - `mode` (optional, default `--background`): either `--background` or `--wait`.
 
-## Phase 4: Dispatch Codex
+## Phase 4: Dispatch Codex (direct `codex exec`, full-access sandbox)
 
-There are TWO paths. Try Path A first; fall back to Path B if A fails or returns empty stdout (typically because the subagent lacks Bash permission).
+ohaze bypasses the `codex-companion.mjs` task interface because that interface is hardcoded to `workspace-write` sandbox, which blocks writes outside the worktree (e.g., `~/Brain/`, `~/.claude/`, cross-project paths). Many ohaze ship plans legitimately need those writes — vault sync, global settings patches, registry registration.
 
-### Path A — preferred: codex:codex-rescue subagent
+Instead, invoke `codex exec` directly with `--sandbox danger-full-access`. The ship flow has already gated this through brainstorm → plan review → adversarial review, so the implicit trust boundary is at `/ohaze:ship` invocation, not at the Codex layer.
 
-```
-Agent(
-  subagent_type="codex:codex-rescue",
-  description="Execute plan via Codex",
-  prompt=f"--background --write {codex_prompt}"
-)
-```
-
-Notes:
-- `--background --write` are routing flags consumed by the codex-rescue forwarder.
-- Do NOT add any natural-language instruction outside the XML — the XML is the entire prompt.
-- The subagent returns its stdout verbatim. Capture the codex run identifier from the response.
-
-### Path B — fallback: direct Bash invocation
-
-If Path A returns empty / errors / reports missing Bash permission, do NOT abort. Run the same command directly from the main session:
+### Step 1 — Write prompt to a file (avoid shell quoting hell)
 
 ```bash
-# Resolve current codex plugin install path
-codex_root=$(ls -d ~/.claude/plugins/cache/openai-codex/codex/*/ | sort -V | tail -1)
-
-# Dispatch the same task. Note: codex_prompt is the full XML string from
-# ohaze:plan-to-codex-prompt — embed it as a single-quoted literal.
-node "${codex_root}scripts/codex-companion.mjs" task --background --write '<codex_prompt>'
+mkdir -p <worktree_path>/.ohaze
+PROMPT_FILE=<worktree_path>/.ohaze/codex-prompt.xml
+# Use the Write tool to write the full XML string to PROMPT_FILE
 ```
 
-The stdout contains a line like `Codex Task started in the background as task-XXXXXXX-YYYYYY`. Extract the job ID.
+Use the Write tool (not a heredoc) for the prompt file. The XML contains backticks, dollar signs, and possibly other shell metachars — only Write is safe.
 
-### Why the fallback exists
+### Step 2 — Generate a job id, set log path
 
-Subagents in Claude Code require `Bash(node:*)` (or a more specific pattern) to be present in the user's `~/.claude/settings.json` `permissions.allow` array, because subagents have no interactive permission UI. If the user hasn't pre-approved this, Path A silently fails and Path B is the only way through. The functional result is the same — Codex runs the same prompt either way; we only lose the codex-rescue subagent's optional gpt-5-4-prompting refinement, which is redundant since `ohaze:plan-to-codex-prompt` already produces a tight XML contract.
+```bash
+JOB_ID="ohaze-$(date +%s)-$$"
+LOG_FILE=<worktree_path>/.ohaze/codex-${JOB_ID}.log
+PID_FILE=<worktree_path>/.ohaze/codex-${JOB_ID}.pid
+```
 
-### After dispatch (either path)
+### Step 3 — Background-dispatch codex exec
 
-Immediately tell the user:
+Use Claude Code's `Bash(run_in_background: true)` so the main session is not blocked.
 
-> "Codex 已后台执行 (run_id=`<id>`). 用 `/codex:status <id>` 看进度, 跑完后用 `/ohaze:ship-review` 触发审查."
+```bash
+# Bash tool call with run_in_background=true.
+# codex exec reads the prompt from stdin when "-" is the positional arg
+# (or omitted entirely when stdin is piped).
+nohup codex exec \
+  --sandbox danger-full-access \
+  --skip-git-repo-check \
+  --cd <worktree_path> \
+  < <prompt_file> \
+  > <log_file> 2>&1 &
+echo $! > <pid_file>
+```
 
-Then stop. The session ends here. Phases 5-6 happen later in `/ohaze:ship-review`.
+(Verify `codex exec --help` if the installed version's flags differ.)
 
-If the user passed `mode=--wait`, swap `--background` for `--wait` in the prompt and proceed inline to Phase 5 in the same turn.
+### Step 4 — Persist job metadata to handoff
+
+Update `.ohaze/current-ship.json` to include the job id, pid file, and log file. The retry / review flow uses these instead of a companion-issued run id.
+
+```json
+{
+  ...
+  "codex_job_id": "ohaze-1747431234-12345",
+  "codex_pid_file": "<worktree>/.ohaze/codex-<job_id>.pid",
+  "codex_log_file": "<worktree>/.ohaze/codex-<job_id>.log",
+  "codex_thread_resume": false
+}
+```
+
+(`codex_run_id` field — kept for vault-adapter back-compat — gets set to the same value as `codex_job_id`.)
+
+### Step 5 — Report to user
+
+> "Codex 已在后台跑 (job_id=`<id>`, sandbox=danger-full-access). 进度:
+> - `tail -f <log_file>` — 实时日志
+> - `ps -p $(cat <pid_file>)` — 进程状态
+>
+> 跑完后回 `/ohaze:ship-review`."
+
+Then stop. Phases 5-6 happen in `/ohaze:ship-review`.
+
+### About `--wait` mode
+
+If the caller passed `mode=--wait`, drop the `&` and `run_in_background` — let `codex exec` run in the foreground and proceed inline to Phase 5 in the same turn.
+
+### What about `codex:codex-rescue` subagent?
+
+The codex-rescue subagent still goes through `codex-companion.mjs` and inherits its sandbox lockdown. ohaze no longer dispatches through it. If you need codex-rescue's gpt-5-4-prompting refinement layer, that's a separate use case (e.g., `/codex:rescue` for one-shot ad-hoc help) — not part of the ship flow.
 
 ## Phase 5: Claude-side Review
 
-Trigger this when the Codex run completes (signaled by `/codex:status` reporting done, or invoked from `/ohaze:ship-review`).
+Trigger this when the Codex run completes (the pid in `<pid_file>` is no longer alive, or the log shows the end-of-run report). `/ohaze:ship-review` is the user-driven trigger to proceed.
 
 ### Phase 5.0: Apply Codex's pending changes as commits (REQUIRED)
 
-Codex's sandbox blocks `.git/` writes (this is by design — see plan-to-codex-prompt's `<commit_handling>`), so Codex leaves uncommitted changes in the worktree. Before review, the orchestrator must commit those changes using the messages the plan specified.
+Even though Codex now has full sandbox access (could commit itself), ohaze keeps commit authority at the orchestrator by convention — see plan-to-codex-prompt's `<commit_handling>`. This ensures consistent commit message style and lets the orchestrator group / split commits per Task.
 
-1. Fetch Codex's final result: run `/codex:result <run_id>` (or read its output if already returned). Look for the `Commits made: skipped ...` line listing the intended commit messages.
+Codex therefore leaves uncommitted changes in the worktree. Before review, the orchestrator must commit them using the messages the plan / Codex's report specified.
+
+1. Fetch Codex's final result by reading `<log_file>` (the full Codex stdout) or its tail. Look for the report block that lists "suggested commit messages per Task" (see plan-to-codex-prompt's `<output_report>`).
 
 2. Inspect what Codex left behind:
    ```bash
@@ -220,17 +251,20 @@ Track retry counter starting at 0.
      After fixing, re-run the project test command. All tests must pass before reporting done.
      </verification_loop>
      ```
-  2. Dispatch with `--resume` flag (continues the same Codex thread):
+  2. Write the fix prompt to `<worktree>/.ohaze/codex-fix-iter<N>.xml` via Write tool, then dispatch with `codex exec resume --last` (continues the same Codex thread started in Phase 4):
+
+     ```bash
+     # Foreground for retries — user is engaged, no need to background
+     codex exec resume --last \
+       --sandbox danger-full-access \
+       --cd <worktree_path> \
+       < <worktree>/.ohaze/codex-fix-iter<N>.xml \
+       2>&1 | tee -a <log_file>
      ```
-     Agent(
-       subagent_type="codex:codex-rescue",
-       description="Codex fix iteration {retry+1}",
-       prompt=f"--resume --write {fix_prompt}"
-     )
-     ```
-  3. Wait for completion (use `--wait` for retries since we're already mid-loop and the user is engaged).
-  4. Increment retry counter.
-  5. Re-run Phase 5 (review).
+
+     If `codex exec resume --last` fails to find the prior thread (e.g., codex was restarted between sessions), fall back to a fresh `codex exec` with the fix prompt embedded inside a `<task>` block that references the original goal (read it from the saved prompt file or the log).
+  3. Increment retry counter; update `.ohaze/current-ship.json` `retries` field.
+  4. Re-run Phase 5 (review).
 
 - If reviewer returns `VERDICT: FAIL` and retry == 3:
   - Stop and report all 3 attempts' findings to the user in a structured summary:
@@ -256,6 +290,8 @@ Track retry counter starting at 0.
 
 ## Failure modes and recovery
 
-- **Codex dispatch fails (subagent returns nothing)**: report the failure, suggest `/codex:setup` if not yet run. Do not improvise an inline implementation.
+- **`codex` binary not found**: report the failure, suggest `/codex:setup` if not yet run. Do not improvise an inline implementation.
+- **Background nohup exits immediately (pid no longer alive within 5s)**: tail the log file — Codex likely refused to start (auth issue, sandbox flag rejected by old codex version, prompt file unreadable). Surface the actual error.
 - **Reviewer subagent returns malformed verdict**: re-dispatch the reviewer once with stricter format guidance. If it fails again, fall back to asking user to read `git diff` and decide.
-- **Worktree state is dirty after Codex says done**: report it; do NOT auto-commit. Codex should have committed per the plan; dirty state means something is off.
+- **Worktree state is dirty after Codex log says done**: read the log's `Notable implementation choices` and `Touched files` to confirm completion intent. The orchestrator should then commit per the Task message mapping in Phase 5.0.
+- **`codex resume --last` fails to find prior thread**: fall back to fresh `codex exec` with combined "original task + fix delta" prompt. Note this in the retry log so the reviewer knows context may have been lost.

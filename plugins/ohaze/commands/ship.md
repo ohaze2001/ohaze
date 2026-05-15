@@ -106,16 +106,16 @@ PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
    - `base_ref`: base branch from step 4 (typically `main`)
    - `mode`: `--background` (V1 default)
 
-   The skill dispatches `codex:codex-rescue` and tells the user how to proceed.
+   The skill dispatches `codex exec --sandbox danger-full-access` in the background (via Claude Code's `Bash(run_in_background)`) and records `codex_pid_file` / `codex_log_file` paths in the handoff.
 
 ## Stop here
 
 The skill ends `/ohaze:ship` after Phase 4. Codex runs in the background. Tell the user:
 
-> "Phase 1-4 完成. Codex 在后台执行 plan. 下一步:
-> - `/codex:status` — 查看 Codex 进度
-> - `/codex:result` — Codex 跑完后查看结果
-> - `/ohaze:ship-review` — 触发审查循环 + finishing (Codex 跑完后再调)"
+> "Phase 1-4 完成. Codex 在后台执行 plan (job_id=`<id>`, sandbox=danger-full-access). 下一步:
+> - `tail -f <codex_log_file>` — 实时看 Codex 输出
+> - `ps -p $(cat <codex_pid_file>)` — 看进程是否还在
+> - `/ohaze:ship-review` — 跑完后触发审查 + finishing"
 
 DO NOT auto-poll. DO NOT trigger Phase 5 in this same `/ohaze:ship` invocation. The user invokes `/ohaze:ship-review` when they're ready.
 
@@ -160,7 +160,10 @@ Handoff file shape:
   "spec_path": "<absolute path>",
   "started_at": "<ISO timestamp>",
   "retries": 0,
-  "codex_run_id": "<task-xxx-yyy if Path A succeeded, else fill in after Path B>",
+  "codex_job_id": "<ohaze-<unix_ts>-<pid> generated in codex-executor Phase 4>",
+  "codex_run_id": "<same as codex_job_id (vault-adapter back-compat)>",
+  "codex_pid_file": "<worktree>/.ohaze/codex-<job_id>.pid",
+  "codex_log_file": "<worktree>/.ohaze/codex-<job_id>.log",
   "state": "running",
   "linked_todo": "<exact todo text from Step A, or null>"
 }

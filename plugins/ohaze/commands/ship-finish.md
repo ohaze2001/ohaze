@@ -97,24 +97,25 @@ Then proceed. If no ADVERSARIAL findings, skip silently.
 
 ## Step 3 — Finishing Menu
 
-Present the same 5-option menu as `/ohaze:ship-review`:
+Present the same 6-option menu as `/ohaze:ship-review`. Detect remote first and prepend the no-remote warning if applicable (see ship-review.md for details):
 
 ```
 请选择:
-1. 推送到远端
-2. 创建 Pull Request
-3. 保持现状 (再次保留, 稍后用 /ohaze:ship-finish 回来)
-4. 丢弃此次工作
-5. 继续修改 (小改动)
+1. 合并回主分支 (本地 git merge --ff-only, 适合纯本地仓 / 不开 PR)
+2. 推送到远端 (git push, 不开 PR)
+3. 创建 Pull Request (推 + gh pr create)
+4. 保持现状 (再次保留, 稍后用 /ohaze:ship-finish 回来)
+5. 丢弃此次工作
+6. 继续修改 (小改动)
 ```
 
-The behavior of each option is **identical to `/ohaze:ship-review`'s Phase 7**. Reuse that logic — do not duplicate it. This includes writing `.ohaze/ship-result.json` before each terminal action (options 1/2/4) as described there.
+The behavior of each option is **identical to `/ohaze:ship-review`'s Phase 7**. Reuse that logic — do not duplicate it. This includes writing `.ohaze/ship-result.json` before each terminal action (options 1/2/3/5) as described there.
 
 ## Cleanup
 
-- Options 1 / 2 / 4: write `ship-result.json` first (vault hook), then remove handoff file.
-- Option 3: keep handoff (state = "kept"), tell user how to come back.
-- Option 5: enter modify sub-flow, loop back to menu.
+- Options 1 / 2 / 3 / 5: write `ship-result.json` first (vault hook), then remove handoff file.
+- Option 4: keep handoff (state = "kept"), tell user how to come back.
+- Option 6: enter modify sub-flow, loop back to menu.
 
 ## Final Summary
 

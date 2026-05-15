@@ -44,15 +44,31 @@ For each worktree, gather:
    - Non-empty → "有未提交改动"
 
 2. **ohaze handoff** — does `<path>/.ohaze/current-ship.json` exist?
-   - If yes, parse and capture: `plan_path`, `started_at`, `retries`, optional `codex_run_id`
+   - If yes, parse and capture: `plan_path`, `started_at`, `retries`, `codex_job_id`, `codex_pid_file`, `codex_log_file` (older handoffs may have `codex_run_id` instead)
    - If no, this worktree is not in an active ship
 
-3. **Codex job state** (only if handoff exists with `codex_run_id`):
+3. **Codex job state** (only if handoff exists):
    ```bash
-   node "${codex_root}scripts/codex-companion.mjs" status <run_id> --json 2>/dev/null
+   # If codex_pid_file is set (new style — codex exec direct invocation):
+   if [[ -f "$codex_pid_file" ]]; then
+     pid=$(cat "$codex_pid_file")
+     if kill -0 "$pid" 2>/dev/null; then
+       status=running
+       elapsed=$(ps -p "$pid" -o etime= | tr -d ' ')
+     else
+       # Process done. Tail log to check pass/fail.
+       if grep -q "Final test status: PASS" "$codex_log_file" 2>/dev/null; then
+         status=completed
+       elif grep -q "Final test status: FAIL" "$codex_log_file" 2>/dev/null; then
+         status=failed
+       else
+         status=completed  # finished without explicit verdict; treat as done
+       fi
+     fi
+   fi
    ```
-   Where `${codex_root}` is `~/.claude/plugins/cache/openai-codex/codex/<latest>/` (resolve dynamically).
-   Capture: `status` (running / completed / failed), `elapsed`.
+
+   Back-compat: if only `codex_run_id` (no pid_file) is present in the handoff, fall back to `node "${codex_root}scripts/codex-companion.mjs" status <run_id> --json` where `${codex_root}` is `~/.claude/plugins/cache/openai-codex/codex/<latest>/`.
 
 4. **Last activity** — modification time of newest file in worktree:
    ```bash
@@ -97,7 +113,7 @@ Use this exact layout:
 | 情况 | icon | 文字 | 下一步 |
 |---|---|---|---|
 | 无 ohaze 任务 | ⚪ | 闲置 | — |
-| Codex running | 🟡 | Codex 跑中 (run_id, elapsed) | `/codex:status <id>` |
+| Codex running | 🟡 | Codex 跑中 (job_id, elapsed) | `tail -f <codex_log_file>` |
 | Codex completed, 未审查 | 🟢 | 等审查 | `cd <path> && /ohaze:ship-review` |
 | review PASS, 未 finish | 🟢 | 等 finish | `cd <path> && /ohaze:ship-finish` |
 | review FAIL, retries < 3 | 🟠 | 修复中 (retry N/3) | 等待续跑或 `/ohaze:ship-review --more` |
