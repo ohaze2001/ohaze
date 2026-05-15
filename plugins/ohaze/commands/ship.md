@@ -38,10 +38,34 @@ PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
    - `${VAULT}/99_System/Logs/decision-patterns.md` — user's implicit preferences
    - The 3 most recent files in `${PROJ_DIR}/decisions/` — past feature decisions
 
-   Use this context to:
+3a. **Cross-project related reads (the knowledge graph edges)**:
+
+   Parse the `related` field from the current project's README.md frontmatter:
+   ```bash
+   # frontmatter has: related: [proj1, proj2]  or  related: []
+   RELATED=$(awk '/^---$/{f++;next} f==1 && /^related:/{
+     sub(/^related: *\[/,""); sub(/\] *$/,""); gsub(/,/," "); gsub(/"/,"");
+     print; exit
+   }' "${PROJ_DIR}/README.md" 2>/dev/null)
+   ```
+
+   For each name in `${RELATED}`, read `${VAULT}/20_Projects/${name}/README.md` (best-effort). Cap at 5 related projects to avoid context bloat; if there are more, take the first 5.
+
+   Use these related READMEs to:
+   - Check for shared contracts / public APIs that the ship target might break
+   - Detect duplicate-effort risk (a related project already solved this — propose reuse)
+   - Surface coupling concerns the user might have forgotten
+
+   In brainstorming, flag any of these explicitly if relevant:
+   > "注意: related 项目 `<name>` 的 stage 是 `<stage>`, next 是 `<next>` — 这次改动会影响它吗?"
+
+   If `related: []` (empty) or field missing, skip silently. Don't fabricate edges.
+
+   Combined use of all context above:
    - Anchor brainstorming around the project's actual current state (not just the user's prompt)
    - Avoid proposing approaches that conflict with `decision-patterns.md`
    - Notice if the requested feature overlaps with a recent decision
+   - Catch cross-project break risks before they ship
 
 ## Phase 1 — Brainstorm (superpowers)
 
