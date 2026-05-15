@@ -83,16 +83,14 @@ PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
    - Capture the worktree path and base branch (typically `main`); these are needed in Phase 4 and Phase 5.
    - After the worktree is created and the clean test baseline passes, **`cd` into the worktree** before invoking writing-plans, so the plan and all subsequent work happens inside the isolated worktree.
 
-## Phase 3 — Plan (superpowers)
+## Phase 3 — Plan (ohaze)
 
-5. Invoke the `superpowers:writing-plans` skill.
-   - It saves the plan to `docs/superpowers/plans/<date>-<feature>.md`.
+5. Invoke the `ohaze:writing-plans` skill.
+   - It saves a **guidance plan** (behavior contracts + acceptance criteria, no prescriptive code bodies) to `docs/superpowers/plans/<date>-<feature>.md`.
    - Capture the absolute plan file path.
-   - **CRITICAL — Override writing-plans' built-in handoff:** at the end of writing-plans the skill will try to display its own prompt asking the user to choose between "Subagent-Driven" and "Inline Execution". DO NOT show that menu. DO NOT wait for the user to pick 1 or 2. The execution path is already decided by `/ohaze:ship` — it goes through Codex via Phase 4 below.
-   - Instead, after the plan is saved and self-reviewed, present a different prompt:
-     > "Plan saved to `<path>`. Phase 4 会自动把它 distill 成 guidance（行为契约 + 验收点）给 Codex，原 plan 保留供参考。请审阅 plan 后回复 'go' 继续。"
-   - Wait for the user's approval of the **plan content** (not the execution method).
-   - When the user approves, proceed directly to Phase 4. Do NOT invoke `superpowers:subagent-driven-development` or `superpowers:executing-plans` — those are explicitly out of the ohaze workflow.
+   - The skill already presents an ohaze-specific 'go' prompt at the end — no need to override anything.
+   - When the user replies 'go', proceed directly to Phase 4. Do NOT invoke `superpowers:subagent-driven-development` or `superpowers:executing-plans` — those execution models are explicitly out of the ohaze workflow.
+   - **Why not `superpowers:writing-plans`?** Upstream writing-plans produces fully-prescriptive plans (complete function bodies in every step), which reduces Codex to a typist. `ohaze:writing-plans` is a contract-form fork that preserves the architectural rigor (Scope Check, File Structure, TDD rhythm, Self-Review) but leaves implementation autonomy to Codex.
 
 ## Phase 4 — Hand off to Codex (ohaze)
 

@@ -1,0 +1,228 @@
+---
+name: writing-plans
+description: Use when you have a spec or requirements for a multi-step task that will be executed by Codex (not a human engineer). Produces a guidance plan — contracts, interfaces, acceptance — instead of prescriptive code, leaving implementation autonomy to Codex.
+---
+
+# Writing Plans (ohaze)
+
+## Overview
+
+Write **guidance-first implementation plans** for downstream Codex execution. The plan tells Codex *what* must be true at each Task's completion (behavior contracts, interfaces, files affected, acceptance criteria) without prescribing *how* (no complete function bodies, no variable names, no line-by-line steps).
+
+This skill is forked-and-adapted from `superpowers:writing-plans` (Jesse Vincent, MIT). Architecture, TDD rhythm, Task decomposition, self-review — all preserved. The change is **what goes inside each Task**: contracts instead of code.
+
+**Why**: Codex is a capable implementer, not a typist. When you hand it a plan that already contains every variable name and every line of code, it degrades to dictation and you lose its judgment. Plans that bound the contract but leave the implementation open give Codex room to make local quality decisions.
+
+**Announce at start:** "I'm using the ohaze:writing-plans skill to create the guidance plan."
+
+**Context:** If working in an isolated worktree, it should have been created via the `superpowers:using-git-worktrees` skill at execution time.
+
+**Save plans to:** `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`
+
+---
+
+## Scope Check
+
+If the spec covers multiple independent subsystems, it should have been broken into sub-project specs during brainstorming. If it wasn't, suggest breaking this into separate plans — one per subsystem. Each plan should produce working, testable software on its own.
+
+---
+
+## File Structure
+
+Before defining tasks, map out which files will be created or modified and what each one is responsible for. This is where decomposition decisions get locked in.
+
+- Design units with clear boundaries and well-defined interfaces. Each file has one clear responsibility.
+- Prefer smaller, focused files over large ones that do too much.
+- Files that change together should live together. Split by responsibility, not by technical layer.
+- In existing codebases, follow established patterns. Don't unilaterally restructure unless a file you're modifying has grown unwieldy.
+
+This structure informs the task decomposition. Each task should produce self-contained changes that make sense independently.
+
+---
+
+## Bite-Sized Task Granularity
+
+Each Task is a unit of work that produces a self-contained, testable change.
+
+**Each step within a Task is one action (2-5 minutes)**:
+- "Write the failing test asserting <behavior>" — step
+- "Verify it fails for the right reason" — step
+- "Implement the minimal code to satisfy the contract" — step
+- "Verify all tests pass" — step
+- "Commit with suggested message: <type>(<area>): <one-line>" — step
+
+Note the contrast with the upstream superpowers writing-plans: steps still exist, but they describe **actions on the contract**, not code-block recipes.
+
+---
+
+## Plan Document Header
+
+**Every plan MUST start with this header:**
+
+```markdown
+# [Feature Name] — Guidance Plan
+
+> **For Codex (the executor):** Each Task below specifies WHAT must be true at completion, not HOW to write it line by line. You have autonomy over internal naming, control flow, helper extraction, and algorithm choice. You do NOT have autonomy over public interfaces, file paths in Files lists, acceptance criteria, or cross-Task invariants. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** [One sentence describing what this builds]
+
+**Architecture:** [2-3 sentences about approach — the WHY of the design, not the HOW of the implementation]
+
+**Tech Stack:** [Key technologies/libraries already in use, that this work plugs into]
+
+---
+```
+
+---
+
+## Task Structure (guidance form)
+
+Every Task uses this exact structure:
+
+````markdown
+### Task N: [Component Name]
+
+**Files:**
+- Create: `exact/path/to/file.ext`
+- Modify: `exact/path/to/existing.ext`
+- Test: `tests/exact/path/to/test.ext`
+
+**Behavior Contract:**
+- **Public interface(s)**: function signatures, class methods, CLI args, HTTP endpoints, log line format — whatever this Task exposes to other Tasks or external callers. List signatures only (e.g. `parseConfig(path: string): Config` — no body).
+- **Inputs**: type constraints, valid ranges, accepted formats
+- **Outputs**: return shape, written files, network calls, log writes
+- **Side effects**: any state mutation outside the function's own return (DB writes, file writes, env mutations)
+- **Error boundaries**: which conditions raise, which conditions fail-soft, which conditions retry
+- **Invariants that must hold**: e.g. "function is idempotent", "lockfile prevents concurrent invocation"
+
+**Acceptance Criteria:**
+- [ ] Test: [describe what the test asserts — the behavior under test, not the test code itself]
+- [ ] Test: [another assertion]
+- [ ] Manual check (if applicable): [describe the manual verification, e.g. "running `./run.sh` produces a file at X containing Y"]
+- [ ] Interface conformance: public signatures match what the Behavior Contract listed
+
+**TDD Sequence:**
+- [ ] Step 1: Write a failing test that asserts the behaviors listed in Acceptance Criteria
+- [ ] Step 2: Run the test, confirm it fails for the reason you expect
+- [ ] Step 3: Implement code satisfying the Behavior Contract — your choice on internal structure
+- [ ] Step 4: Run tests, confirm all pass
+- [ ] Step 5: Optional in-file refactor for clarity, if it doesn't change the Contract
+- [ ] Step 6: Commit. Suggested message: `<type>(<area>): <one-line summary>`. The orchestrator may rewrite — that's fine.
+
+**Cross-Task Dependencies (if any):**
+- "Depends on Task M's <interface>" — list the contract surface this Task consumes from earlier Tasks
+- "Provides <interface> for Task K" — list what later Tasks depend on
+````
+
+### Acceptable code blocks inside a Task
+
+These are the **only** kinds of code blocks that belong in a Task:
+
+1. **Interface signatures** — function/method/class signatures **without bodies**
+2. **Type definitions** — TypeScript interfaces, Python TypedDict, Rust structs, etc. (data shapes are contracts)
+3. **JSON/YAML/TOML config samples** — these are data, not implementation
+4. **Log line / output format examples** — to lock the contract
+5. **Test assertions** — only when the assertion text *is* the acceptance criterion (e.g. "assert response.status == 200"). Not full test functions.
+
+These are **forbidden** code blocks:
+
+- Complete function bodies (> 3 executable lines)
+- Complete shell scripts
+- Specific `sed` / `awk` / `grep` one-liners
+- Step-by-step "write this line then that line" walkthroughs
+
+---
+
+## No Placeholders
+
+Every step must contain real, actionable content. These are **plan failures** — never write them:
+
+- "TBD", "TODO", "implement later", "fill in details"
+- "Add appropriate error handling" — say *which* errors, *what* boundary
+- "Handle edge cases" — list the edge cases that matter
+- "Write tests for the above" — list the behaviors to test
+- "Similar to Task N" — restate the contract (the reader may be reading Tasks out of order)
+- Acceptance criteria that aren't checkable ("should work well")
+- References to interfaces, types, or files not defined in any Task or import
+
+---
+
+## Calibration: where to draw the line
+
+Two failure modes to avoid:
+
+**Too prescriptive** (the upstream superpowers behavior we're avoiding):
+- Writing complete `function foo() { ... }` bodies
+- Specifying variable names like `let N = 0; let TOTAL = wc -l ...`
+- Telling Codex which library function to call internally
+
+**Too vague** (a guidance plan failing the other way):
+- "Build the feature" — no behaviors, no files, no acceptance
+- Acceptance like "it works" — no checkable assertion
+- Missing public interface signatures — Codex can't know what to expose
+
+Sweet spot: **a senior engineer reading this plan should know exactly what to deliver, but a junior engineer reading it might not know which library calls to use** — that's intentional. We're delegating implementation, not delegating understanding.
+
+---
+
+## Remember
+
+- Exact file paths always
+- Contract per Task, not code per Task
+- Acceptance criteria must be checkable (test assertion, file existence, command output, signature match)
+- DRY, YAGNI, TDD, frequent commits — the discipline survives the formatting change
+
+---
+
+## Self-Review
+
+After writing the complete plan, look at the spec with fresh eyes and check:
+
+**1. Spec coverage:** Skim each section/requirement in the spec. Can you point to a Task that implements it? List any gaps and add Tasks for them.
+
+**2. Placeholder scan:** Search your plan for red flags — TBD/TODO/"appropriate"/"handle edge cases". Replace with concrete contracts or behaviors.
+
+**3. Contract leakage:** Search your plan for forbidden code blocks (complete function bodies, shell scripts, sed/awk one-liners). Replace with behavior descriptions.
+
+**4. Contract consistency:** Do interface signatures used in later Tasks match what earlier Tasks declared? A function called `clearLayers()` in Task 3 but `clearFullLayers()` in Task 7 is a bug.
+
+**5. Acceptance checkability:** For each Acceptance Criteria, can you imagine the exact bash command or assertion that proves it? If not, sharpen it.
+
+If you find issues, fix them inline. No need to re-review — just fix and move on.
+
+---
+
+## Optional: Plan Document Reviewer
+
+For larger plans (≥ 4 Tasks or > 200 lines), optionally dispatch the plan-document-reviewer subagent using the prompt in `plan-document-reviewer-prompt.md`. It catches gaps the self-review may have missed. For small plans, skip — the self-review is enough.
+
+---
+
+## Execution Handoff
+
+After saving the plan, do NOT show superpowers:writing-plans' "Subagent-Driven vs Inline Execution" menu — that menu belongs to a different execution model.
+
+Inside the ohaze flow (`/ohaze:ship`), present this prompt instead:
+
+> "Guidance plan saved to `docs/superpowers/plans/<filename>.md`. Codex will receive this verbatim — its contracts and acceptance criteria define done. Please review then reply 'go' to dispatch Codex."
+
+Wait for user's 'go'. Then control returns to `/ohaze:ship` Phase 4 (which calls `ohaze:plan-to-codex-prompt`).
+
+If invoked standalone (not inside `/ohaze:ship`), just print:
+
+> "Guidance plan saved to `docs/superpowers/plans/<filename>.md`. Next step: hand to Codex via `ohaze:plan-to-codex-prompt` skill, or invoke `/ohaze:ship` to run the full flow."
+
+---
+
+## What this skill does NOT do
+
+- It does not execute the plan. That's `codex:codex-rescue` (dispatched by `ohaze:codex-executor`).
+- It does not invoke `superpowers:subagent-driven-development` or `superpowers:executing-plans`. Those are different execution models incompatible with ohaze's Codex-end-to-end flow.
+- It does not write the spec. That's `superpowers:brainstorming`.
+- It does not modify or distill an existing plan. For that, edit the file or re-invoke this skill against the spec.
+
+---
+
+## Attribution
+
+Forked from `superpowers:writing-plans` v5.1.0 (Jesse Vincent, MIT license, https://github.com/obra/superpowers). The architectural skeleton (Scope Check, File Structure, Bite-Sized Tasks, Plan Header, Self-Review, plan-document-reviewer pattern) is preserved verbatim or near-verbatim. The Task Structure section was rewritten to produce contracts instead of code. The "Calibration", "Acceptable code blocks", and "Contract leakage" sections were added.
