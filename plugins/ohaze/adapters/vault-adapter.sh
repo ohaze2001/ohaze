@@ -582,11 +582,9 @@ EOF
   local readme_path="${VAULT}/20_Projects/${proj}/README.md"
   if [[ ( "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" ) && -f "$readme_path" ]]; then
     # 提取 feature 的语义描述（去掉日期前缀 YYYY-MM-DD-）
+    # frontmatter 的 updated 字段由 vault_append 自动维护，不在这里重复刷
     local feature_desc
     feature_desc=$(echo "$feature" | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-//')
-
-    # 更新 frontmatter 中的 last_active 和 milestone 字段（如果有）
-    sed -i '' "s/^last_active: .*/last_active: ${TODAY}/" "$readme_path" 2>/dev/null || true
 
     # 在 ## 当前阶段 或 ## Next 后追加已完成记录（如果 section 存在）
     if grep -q "^## 当前阶段\|^## Next\|^## 当前目标" "$readme_path" 2>/dev/null; then
