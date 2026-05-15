@@ -90,7 +90,7 @@ PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
    - Capture the absolute plan file path.
    - **CRITICAL — Override writing-plans' built-in handoff:** at the end of writing-plans the skill will try to display its own prompt asking the user to choose between "Subagent-Driven" and "Inline Execution". DO NOT show that menu. DO NOT wait for the user to pick 1 or 2. The execution path is already decided by `/ohaze:ship` — it goes through Codex via Phase 4 below.
    - Instead, after the plan is saved and self-reviewed, present a different prompt:
-     > "Plan saved to `<path>`. 请审阅后回复 'go' 继续，让 Codex 后台执行整份 plan。"
+     > "Plan saved to `<path>`. Phase 4 会自动把它 distill 成 guidance（行为契约 + 验收点）给 Codex，原 plan 保留供参考。请审阅 plan 后回复 'go' 继续。"
    - Wait for the user's approval of the **plan content** (not the execution method).
    - When the user approves, proceed directly to Phase 4. Do NOT invoke `superpowers:subagent-driven-development` or `superpowers:executing-plans` — those are explicitly out of the ohaze workflow.
 

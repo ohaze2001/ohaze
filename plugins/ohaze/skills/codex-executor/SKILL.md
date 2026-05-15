@@ -151,15 +151,17 @@ Worktree: {worktree_path}
 
 Your three-part review:
 
-PART 1 — Spec compliance:
-- Read the plan file in full.
+PART 1 — Contract compliance:
+- Read the **guidance plan** (`<plan_path>.guidance.md`) — this is what Codex was given. The full original plan (`<plan_path>`) is supplementary context only and may contain prescriptive implementation details Codex was NOT required to follow verbatim.
 - Walk through `git diff {base_ref}...HEAD` and the commit log.
-- For each Task in the plan: did Codex implement it? Are the listed Files actually changed? Are the test files present and tests actually written?
-- Flag: missing tasks, extra unrequested changes, test files that exist but don't match the plan's specified test cases.
+- For each Task in the guidance: is the behavior contract met? Are the Files listed in Files Affected actually changed? Do the acceptance criteria hold (tests pass / files exist / interfaces match)?
+- **Implementation autonomy is expected**: Codex chooses internal variable names, control flow, helper extraction, algorithm details. Do NOT flag those as defects unless they violate a contract or acceptance criterion.
+- Flag: unmet behavior contracts, missing Tasks, files modified outside the Files lists, acceptance criteria that don't hold, public interface signatures that differ from the contract.
 
 PART 2 — Code quality:
 - Standard quality concerns: error handling, edge cases, naming, dead code, leaked secrets.
-- Do NOT flag style nits the plan didn't require.
+- Do NOT flag style nits the guidance didn't require.
+- Do NOT flag "the original plan said X but Codex did Y" if Y still satisfies the guidance contract — that's autonomy, not a defect.
 - If vault_context is non-empty: also flag violations of past project decisions or user preferences noted there.
 
 PART 3 — Adversarial review (design challenge):
