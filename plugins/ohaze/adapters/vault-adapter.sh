@@ -491,18 +491,20 @@ handle_pre_bash() {
   discussions_path=$(parse_json "$sync_json" discussions_path)
 
   # 读 ship_result（由 _handle_result 预存）
-  local ship_result_json ship_action ship_remote ship_pr_url ship_branch
+  local ship_result_json ship_action ship_remote ship_pr_url ship_branch ship_target
   ship_result_json=$(parse_json "$sync_json" ship_result)
   if [[ -n "$ship_result_json" && "$ship_result_json" != "None" ]]; then
     ship_action=$(parse_json "$ship_result_json" action)
     ship_remote=$(parse_json "$ship_result_json" remote)
     ship_pr_url=$(parse_json "$ship_result_json" pr_url)
     ship_branch=$(parse_json "$ship_result_json" branch)
+    ship_target=$(parse_json "$ship_result_json" target)
   fi
 
   # 确定最终结果描述
   local disposition="完成"
   case "${ship_action:-}" in
+    merge)   disposition="已合并到 ${ship_target:-base} (本地)" ;;
     push)    disposition="已推送到远端 (${ship_remote:-origin})" ;;
     pr)      disposition="已创建 PR${ship_pr_url:+: ${ship_pr_url}}" ;;
     discard) disposition="已丢弃" ;;
@@ -552,6 +554,7 @@ related: ${discussion_ref}
 | 完成时间 | ${NOW} |
 | 操作类型 | ${ship_action:-unknown} |
 | 分支 | ${ship_branch:-N/A} |
+| 合并目标 | ${ship_target:-N/A} |
 | PR 链接 | ${ship_pr_url:-N/A} |
 | 审查重试次数 | ${retries:-0} |
 | Codex run_id | ${codex_run_id:-N/A} |
@@ -603,7 +606,7 @@ EOF
   # ── 同步更新 README.md 的 stage/next/last_active ────────────────
   # 只有真正交付（push / pr）才更新；discard 和暂停都不登记
   local readme_path="${VAULT}/20_Projects/${proj}/README.md"
-  if [[ ( "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" ) && -f "$readme_path" ]]; then
+  if [[ ( "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" || "${ship_action:-}" == "merge" ) && -f "$readme_path" ]]; then
     # 提取 feature 的语义描述（去掉日期前缀 YYYY-MM-DD-）
     # frontmatter 的 updated 字段由 vault_append 自动维护，不在这里重复刷
     local feature_desc
@@ -630,7 +633,7 @@ EOF
   # 用 linked_todo 精确匹配（ship.md Step A 已由用户选定，避免模糊匹配误伤/漏命中）
   local linked_todo
   linked_todo=$(parse_json "$sync_json" linked_todo)
-  if [[ ( "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" ) && -n "$linked_todo" ]]; then
+  if [[ ( "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" || "${ship_action:-}" == "merge" ) && -n "$linked_todo" ]]; then
     local source_claude
     source_claude=$(echo "$worktree_path" | sed 's|/.worktrees/.*||')/CLAUDE.md
     if [[ -f "$source_claude" ]]; then
