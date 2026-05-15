@@ -32,7 +32,12 @@ import json, sys
 try:
     d = json.loads(sys.argv[1])
     v = d.get(sys.argv[2], '')
-    print('' if v is None else str(v))
+    if v is None or v == '':
+        print('')
+    elif isinstance(v, (dict, list)):
+        print(json.dumps(v))
+    else:
+        print(str(v))
 except:
     print('')
 " "$json" "$key" 2>/dev/null || echo ""
@@ -324,14 +329,23 @@ _handle_verdict() {
   iteration=$(parse_json "$content" iteration)
   [[ -z "$verdict" ]] && { log "verdict: empty verdict field, skip"; return 0; }
 
-  # 从 sync state 拿 discussions_path
-  local sync_json discussions_path
+  # 从 sync state 拿 discussions_path + 已处理过的 verdict key（去重）
+  local sync_json discussions_path last_verdict_key cur_verdict_key
   sync_json=$(read_sync_state "$ohaze_dir")
   discussions_path=$(parse_json "$sync_json" discussions_path)
+  last_verdict_key=$(parse_json "$sync_json" last_verdict_key)
+  cur_verdict_key="${iteration}:${verdict}"
+
   [[ -z "$discussions_path" || ! -f "$discussions_path" ]] && {
     log "verdict: no discussions doc yet, skip"
     return 0
   }
+
+  # 同一 iteration+verdict 已写过，跳过
+  if [[ "$cur_verdict_key" == "$last_verdict_key" ]]; then
+    log "verdict: duplicate ${cur_verdict_key}, skip"
+    return 0
+  fi
 
   local issues_md=""
   if [[ "$verdict" == "FAIL" ]]; then
@@ -360,6 +374,16 @@ print('\n'.join('  - ' + i for i in issues) if issues else '  （无详情）')
       "- **问题列表**:" \
       "${issues_md}"
   fi
+
+  # 把 last_verdict_key 写回 sync state（去重用）
+  local new_sync
+  new_sync=$(python3 -c "
+import json, sys
+state = json.loads(sys.argv[1] or '{}')
+state['last_verdict_key'] = sys.argv[2]
+print(json.dumps(state))
+" "$sync_json" "$cur_verdict_key" 2>/dev/null || echo "$sync_json")
+  write_sync_state "$ohaze_dir" "$new_sync"
 
   log "verdict: appended ${verdict} (iter ${iteration}) to discussions"
   brain_commit "verdict $(basename $(dirname "$ohaze_dir"))"
@@ -554,9 +578,9 @@ EOF
   log "E5: updated progress.md"
 
   # ── 同步更新 README.md 的 stage/next/last_active ────────────────
-  # 只有真正完成（非暂停）才更新
+  # 只有真正交付（push / pr）才更新；discard 和暂停都不登记
   local readme_path="${VAULT}/20_Projects/${proj}/README.md"
-  if [[ "$state" == "running" && -f "$readme_path" ]]; then
+  if [[ ( "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" ) && -f "$readme_path" ]]; then
     # 提取 feature 的语义描述（去掉日期前缀 YYYY-MM-DD-）
     local feature_desc
     feature_desc=$(echo "$feature" | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-//')
@@ -587,10 +611,17 @@ EOF
     # worktree_path → 主项目根（去掉 .worktrees/xxx）
     source_claude=$(echo "$worktree_path" | sed 's|/.worktrees/.*||')/CLAUDE.md
     if [[ -f "$source_claude" ]]; then
-      local feature_desc_short
+      local feature_desc_short feature_desc_escaped
       feature_desc_short=$(echo "$feature" | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-//')
-      # 在 ## 当前目标 section 中把对应功能的 - [ ] 改为 - [x]（按 feature_desc 模糊匹配）
-      sed -i '' "/.*${feature_desc_short}.*/s/- \[ \]/- [x]/" "$source_claude" 2>/dev/null || true
+      # escape sed BRE 元字符（\ / . * [ ] ^ $ &）防注入
+      feature_desc_escaped=$(python3 -c '
+import sys
+s = sys.argv[1]
+special = r"\/.*[]^$&"
+print("".join(("\\" + c) if c in special else c for c in s))
+' "$feature_desc_short" 2>/dev/null || echo "$feature_desc_short")
+      # 在匹配 feature 描述的行把第一个 - [ ] 改为 - [x]（仅命中第一处，避免误改其他 todo）
+      sed -i '' "/${feature_desc_escaped}/s/- \[ \]/- [x]/" "$source_claude" 2>/dev/null || true
       log "E5: updated source CLAUDE.md for ${proj}"
     fi
   fi
