@@ -21,6 +21,83 @@ This skill is forked-and-adapted from `superpowers:writing-plans` (Jesse Vincent
 
 ---
 
+## Reading the Spec — Handle Implementation Details
+
+The input spec is a design document for humans. It often contains implementation details — complete function bodies, executable scripts, specific variable names, sed/awk one-liners, runner pseudocode — that were useful for the human design discussion but are **NOT** meant to be transcribed into the plan verbatim.
+
+**The plan carries the contract; Codex picks the implementation.** When you encounter implementation details in the spec, transform them:
+
+| Spec contains | Plan should have |
+|---|---|
+| Complete function body (more than 3 executable lines) | Behavior Contract: signature + inputs/outputs/side-effects/error-boundaries |
+| Complete executable script | Behavior Contract: entry point + invariants (lockfile, timeout, exit codes) + side effects |
+| Specific internal variable names (`N`, `TOTAL`, `ERR_NOTICE`) | (omit — Codex picks names) |
+| Hardcoded `sed`/`awk`/`grep` one-liners | Intent only: "extract lines after marker", not the syntax |
+| "Step 3.1: write this line; Step 3.2: write that line" | Acceptance: "after execution, file contains <expected content>" |
+
+### Concrete example
+
+If the spec has this:
+
+````bash
+consume_errors_log() {
+  local logfile="$HOME/Brain/99_System/Logs/hook-errors.log"
+  local marker="$HOME/Brain/99_System/Logs/hook-errors.last-read"
+  [[ ! -f "$logfile" ]] && return
+
+  local N=0
+  [[ -f "$marker" ]] && N=$(cat "$marker")
+  local TOTAL=$(wc -l < "$logfile")
+
+  if (( TOTAL > N )); then
+    ERR_NOTICE=$(tail -n $((TOTAL - N)) "$logfile" | tail -n 3)
+    echo "$TOTAL" > "$marker"
+  fi
+}
+````
+
+Your Task should describe:
+
+> **Files**:
+> - Modify: `vault-system/hooks/lib/common.sh` (add function)
+> - Test: `vault-system/hooks/tests/test-common.sh`
+>
+> **Behavior Contract**:
+> - Public: `consume_errors_log()` — no arguments, no return value
+> - Reads `$HOME/Brain/99_System/Logs/hook-errors.log` from the marker position to end of file, captures **at most the last 3 unread lines** into env var `ERR_NOTICE`
+> - Updates marker at `$HOME/Brain/99_System/Logs/hook-errors.last-read` to the current total line count
+> - Tolerates missing log file (return silently, no error) or missing marker (treat as 0 unread)
+>
+> **Acceptance**:
+> - [ ] Test: with marker at 0 and log containing 5 lines, `ERR_NOTICE` contains the last 3 lines and marker is updated to 5
+> - [ ] Test: missing log file → function returns silently, no error written
+> - [ ] Test: missing marker → all log lines are treated as unread
+>
+> (Reference: spec §5.3 for original design discussion)
+
+Do **NOT** copy the bash function body into the plan. The contract above is what Codex needs; how to implement it (variable naming, control flow, whether to use `awk` instead of the loop) is Codex's choice.
+
+### What to keep from the spec verbatim
+
+These belong in the spec **and** in the plan unchanged — they're contracts, not implementation:
+
+- **Interface signatures** (function/method/CLI args/HTTP routes) — these are the contract surface
+- **JSON / YAML / TOML config blocks** — these are data, not code
+- **Log line / output format examples** — locking these locks the contract
+- **Error message text users will see** — that's UX, not implementation
+- **Test assertion text when the assertion IS the acceptance criterion** — copy verbatim
+
+### Why this matters
+
+If you transcribe the spec's code into the plan, two things go wrong:
+
+1. **Codex degrades to a typist** — it executes by character, not by reasoning. You lose its judgment on edge cases, helper extraction, error path design.
+2. **Bugs propagate verbatim** — specs are design-time artifacts, often imperfect. Transcribing them locks the imperfection into shipped code. The plan-as-contract pattern lets Codex catch and fix design-time mistakes during implementation.
+
+Transcribing also makes the plan brittle: a single variable rename in the spec forces a re-edit of the plan.
+
+---
+
 ## Scope Check
 
 If the spec covers multiple independent subsystems, it should have been broken into sub-project specs during brainstorming. If it wasn't, suggest breaking this into separate plans — one per subsystem. Each plan should produce working, testable software on its own.
@@ -182,7 +259,7 @@ After writing the complete plan, look at the spec with fresh eyes and check:
 
 **2. Placeholder scan:** Search your plan for red flags — TBD/TODO/"appropriate"/"handle edge cases". Replace with concrete contracts or behaviors.
 
-**3. Contract leakage:** Search your plan for forbidden code blocks (complete function bodies, shell scripts, sed/awk one-liners). Replace with behavior descriptions.
+**3. Contract leakage:** Search your plan for forbidden code blocks (complete function bodies, shell scripts, sed/awk one-liners). Replace with behavior descriptions. **Pay special attention to code blocks copied from the spec** — those are the most common source of leakage. The spec is allowed to have them (it's a human discussion artifact); the plan is not (it's a Codex execution contract). Apply the transformation table from "Reading the Spec" section.
 
 **4. Contract consistency:** Do interface signatures used in later Tasks match what earlier Tasks declared? A function called `clearLayers()` in Task 3 but `clearFullLayers()` in Task 7 is a bug.
 
