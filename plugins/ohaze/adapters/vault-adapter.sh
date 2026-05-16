@@ -62,11 +62,32 @@ except:
 
 # ─── vault helpers ────────────────────────────────────────────────────
 
-# 从 worktree_path 提取项目名
-# /Users/x/Project/aura-admin-dashboard/.worktrees/feat-xxx → aura-admin-dashboard
-project_from_worktree() {
+# 从 worktree_path 找主仓路径
+# 优先用 git 的 common-dir（处理任意嵌套和命名的 worktree 目录），fallback 到路径模式。
+# 路径模式同时支持 /.worktrees/ 和 /.claude/worktrees/（ohaze 实际使用后者）。
+main_repo_from_worktree() {
   local wt="$1"
-  echo "$wt" | sed 's|/.worktrees/.*||' | xargs basename 2>/dev/null || echo ""
+  local common_dir main_repo
+
+  if common_dir=$(git -C "$wt" rev-parse --git-common-dir 2>/dev/null); then
+    [[ "$common_dir" != /* ]] && common_dir="$wt/$common_dir"
+    if main_repo=$(cd "$(dirname "$common_dir")" 2>/dev/null && pwd); then
+      echo "$main_repo"
+      return 0
+    fi
+  fi
+
+  # 两条 sed 串联兼容 BSD/GNU；命中哪条都能截到主仓 path
+  echo "$wt" | sed 's|/\.claude/worktrees/.*||' | sed 's|/\.worktrees/.*||'
+}
+
+# 从 worktree_path 提取项目名
+# /Users/x/Project/aura/.worktrees/feat-xxx              → aura
+# /Users/x/Project/hazeflow/.claude/worktrees/feat-foo   → hazeflow
+project_from_worktree() {
+  local main_repo
+  main_repo=$(main_repo_from_worktree "$1")
+  [[ -n "$main_repo" ]] && basename "$main_repo" || echo ""
 }
 
 # 从 plan_path 提取 feature slug
@@ -421,7 +442,7 @@ _handle_result() {
   local ohaze_dir
   ohaze_dir=$(dirname "$file_path")
 
-  # 把 result 存入 sync state，E5 pre-bash 读取用
+  # 把 result 存入 sync state
   local sync_json new_sync
   sync_json=$(read_sync_state "$ohaze_dir")
   new_sync=$(python3 -c "
@@ -433,33 +454,21 @@ print(json.dumps(state))
 " "$sync_json" "$content" 2>/dev/null || echo "$sync_json")
   write_sync_state "$ohaze_dir" "$new_sync"
   log "result: saved ship-result to sync state"
+
+  # 立即触发 E5 finish。pre-bash rm 不一定可靠（worktree remove 可能间接清理 handoff、
+  # 或多步 cleanup 中 rm 与路径不在同一行），这里抢先处理；_run_finish 会用 e5_completed 去重。
+  if [[ -f "${ohaze_dir}/current-ship.json" ]]; then
+    _run_finish "${ohaze_dir}/current-ship.json"
+  fi
 }
 
-# ─── E5: pre-bash handler ─────────────────────────────────────────────
-# 触发：LLM 执行 rm .ohaze/current-ship.json 前（PreToolUse）
-# 此时 handoff 文件还在，可以读取
+# ─── E5: finish core ──────────────────────────────────────────────────
+# 真正的 finishing 逻辑。可被 ship-result on-write（推荐路径）或 pre-bash rm 触发。
+# 用 sync_state.e5_completed 去重，避免双触发各跑一次。
 
-handle_pre_bash() {
-  local stdin_json
-  stdin_json=$(cat)
+_run_finish() {
+  local handoff_path="$1"
 
-  local cmd
-  cmd=$(parse_nested "$stdin_json" tool_input command)
-
-  # 只处理「rm ... current-ship.json」在同一行的命令
-  # 用 grep 逐行匹配，避免多行脚本中 rm 和路径不在同行时误触发
-  if ! echo "$cmd" | grep -q 'rm.*current-ship\.json'; then
-    return 0
-  fi
-  log "pre-bash triggered: rm current-ship.json"
-
-  # 从命令中提取 handoff 路径
-  local handoff_path
-  handoff_path=$(echo "$cmd" | grep -oE '[^ ]+\.ohaze/current-ship\.json' | head -1)
-  [[ -z "$handoff_path" ]] && {
-    log "cannot extract handoff path from: $cmd"
-    return 0
-  }
   [[ ! -f "$handoff_path" ]] && { log "handoff not found: $handoff_path"; return 0; }
 
   local content
@@ -481,14 +490,19 @@ handle_pre_bash() {
   feature=$(feature_from_plan "$plan_path")
   ohaze_dir=$(dirname "$handoff_path")
 
+  # 读 sync state（含 e5_completed 去重 / discussions_path）
+  local sync_json discussions_path e5_done
+  sync_json=$(read_sync_state "$ohaze_dir")
+  e5_done=$(parse_json "$sync_json" e5_completed)
+  if [[ "$e5_done" == "1" ]]; then
+    log "E5: already completed for ${proj}/${feature}, skip"
+    return 0
+  fi
+  discussions_path=$(parse_json "$sync_json" discussions_path)
+
   log "E5: finishing ${proj}/${feature} state=${state} retries=${retries}"
 
   ensure_project_dir "$proj"
-
-  # 读 sync state，获取 discussions_path
-  local sync_json discussions_path
-  sync_json=$(read_sync_state "$ohaze_dir")
-  discussions_path=$(parse_json "$sync_json" discussions_path)
 
   # 读 ship_result（由 _handle_result 预存）
   local ship_result_json ship_action ship_remote ship_pr_url ship_branch ship_target
@@ -635,7 +649,7 @@ EOF
   linked_todo=$(parse_json "$sync_json" linked_todo)
   if [[ ( "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" || "${ship_action:-}" == "merge" ) && -n "$linked_todo" ]]; then
     local source_claude
-    source_claude=$(echo "$worktree_path" | sed 's|/.worktrees/.*||')/CLAUDE.md
+    source_claude="$(main_repo_from_worktree "$worktree_path")/CLAUDE.md"
     if [[ -f "$source_claude" ]]; then
       # 用 python 做精确字面替换（不走 sed 正则，避免 todo 文本里有 . / * 等被解释）
       python3 -c '
@@ -655,7 +669,43 @@ sys.exit(1)
     fi
   fi
 
+  # 标记 e5_completed，防止 ship-result on-write 和 pre-bash rm 双触发各跑一次
+  local marked_sync
+  marked_sync=$(python3 -c "
+import json, sys
+state = json.loads(sys.argv[1] or '{}')
+state['e5_completed'] = 1
+print(json.dumps(state))
+" "$sync_json" 2>/dev/null || echo "$sync_json")
+  write_sync_state "$ohaze_dir" "$marked_sync"
+
   brain_commit "finish ${proj}/${feature}"
+}
+
+# ─── E5: pre-bash handler ─────────────────────────────────────────────
+# 兜底触发：LLM 显式 rm .ohaze/current-ship.json 时跑 E5。
+# 主路径是 ship-result.json on-write 已经触发过，这里靠 _run_finish 的 e5_completed 去重。
+
+handle_pre_bash() {
+  local stdin_json
+  stdin_json=$(cat)
+
+  local cmd
+  cmd=$(parse_nested "$stdin_json" tool_input command)
+
+  if ! echo "$cmd" | grep -q 'rm.*current-ship\.json'; then
+    return 0
+  fi
+  log "pre-bash triggered: rm current-ship.json"
+
+  local handoff_path
+  handoff_path=$(echo "$cmd" | grep -oE '[^ ]+\.ohaze/current-ship\.json' | head -1)
+  [[ -z "$handoff_path" ]] && {
+    log "cannot extract handoff path from: $cmd"
+    return 0
+  }
+
+  _run_finish "$handoff_path"
 }
 
 # ─── main ─────────────────────────────────────────────────────────────
