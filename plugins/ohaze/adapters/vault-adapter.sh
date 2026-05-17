@@ -507,12 +507,15 @@ _run_finish() {
   # 读 ship_result（由 _handle_result 预存）
   local ship_result_json ship_action ship_remote ship_pr_url ship_branch ship_target
   ship_result_json=$(parse_json "$sync_json" ship_result)
+  local ship_commits="" ship_commit_count=""
   if [[ -n "$ship_result_json" && "$ship_result_json" != "None" ]]; then
     ship_action=$(parse_json "$ship_result_json" action)
     ship_remote=$(parse_json "$ship_result_json" remote)
     ship_pr_url=$(parse_json "$ship_result_json" pr_url)
     ship_branch=$(parse_json "$ship_result_json" branch)
     ship_target=$(parse_json "$ship_result_json" target)
+    ship_commits=$(parse_json "$ship_result_json" commits)
+    ship_commit_count=$(parse_json "$ship_result_json" commit_count)
   fi
 
   # 确定最终结果描述
@@ -530,10 +533,16 @@ _run_finish() {
       ;;
   esac
 
-  # 获取 commits（worktree 还在）
+  # 获取 commits
+  # 优先 ship_result.commits（ship-review 在 merge 前预算好塞进来，
+  # 因为 merge --ff-only 之后 worktree 的 base..HEAD 是空，git fallback 拿不到）。
+  # 其他 action（push / pr / discard）worktree 跟 base 仍分叉，git fallback work。
   local commits=""
   local commit_count=0
-  if [[ -d "$worktree_path" && -n "$base_ref" ]]; then
+  if [[ -n "$ship_commits" ]]; then
+    commits="$ship_commits"
+    commit_count="${ship_commit_count:-0}"
+  elif [[ -d "$worktree_path" && -n "$base_ref" ]]; then
     commits=$(git -C "$worktree_path" log --oneline "${base_ref}..HEAD" 2>/dev/null || true)
     if [[ -n "$commits" ]]; then
       commit_count=$(echo "$commits" | wc -l | tr -d ' ')

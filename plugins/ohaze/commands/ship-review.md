@@ -124,10 +124,16 @@ Use `AskUserQuestion` with these 6 options. Do NOT default the recommendation �
 For repos without a remote, or when you just want the worktree's commits to land on `<base_ref>` without opening a PR.
 
 ```bash
-# 主仓切到 base_ref，再 fast-forward merge
+# 1. 先算 commits（merge 之前 branch 还跟 base 分叉，git log 才有内容）
+PRE_MERGE_COMMITS=$(git -C "$main_repo_path" log "<base_ref>..<branch>" --oneline 2>/dev/null)
+PRE_MERGE_COUNT=$(printf '%s' "$PRE_MERGE_COMMITS" | grep -c . || echo 0)
+
+# 2. 主仓切到 base_ref，再 fast-forward merge
 git -C "$main_repo_path" checkout <base_ref>
 git -C "$main_repo_path" merge <branch> --ff-only
 ```
+
+**Why pre-compute commits**: `git merge --ff-only` 把 base 推到 branch 的位置后，`base..HEAD` 在 worktree 内是空的（两者同 sha），vault-adapter 走 fallback 算不到 commits → decisions doc 里"Commits 数量 = 0"。必须在 merge 之前拿到 commits 列表，传给 vault hook。
 
 If `--ff-only` fails (因为 `<base_ref>` 在 ship 期间前进了，不再是 worktree 的祖先), surface the error and ask:
 > "Fast-forward 失败 — `<base_ref>` 在 ship 期间有新提交。选项:
@@ -138,10 +144,18 @@ If user picks 1: `git merge <branch> --no-ff -m "merge: <feature> via ohaze"`. I
 
 On successful merge, finalize in this **strict order**:
 
-1. **Use the `Write` tool** (not `cat > heredoc`, which doesn't trigger PostToolUse Write hook) to create `<worktree_path>/.ohaze/ship-result.json` with:
+1. **Use the `Write` tool** (not `cat > heredoc`, which doesn't trigger PostToolUse Write hook) to create `<worktree_path>/.ohaze/ship-result.json`. **Embed the pre-computed commits**:
    ```json
-   {"action":"merge","branch":"<branch>","target":"<base_ref>"}
+   {
+     "action": "merge",
+     "branch": "<branch>",
+     "target": "<base_ref>",
+     "commits": "<PRE_MERGE_COMMITS string verbatim, newlines preserved>",
+     "commit_count": <PRE_MERGE_COUNT>
+   }
    ```
+   vault-adapter prefers `ship_result.commits` over its own `git log`; this is the only reliable way for merge to record commits because the worktree's `base..HEAD` is empty post-merge.
+
    The vault hook fires `on-write` synchronously and runs E5 finish (writes discussions/decisions/progress, ticks CLAUDE.md).
 
 2. Run `rm <worktree_path>/.ohaze/current-ship.json` via Bash. This is a fallback E5 trigger via `pre-bash` (dedup'd against step 1 by `sync_state.e5_completed`).
@@ -152,7 +166,7 @@ On successful merge, finalize in this **strict order**:
    git -C "$main_repo_path" branch -D <branch>   # 已合并, 安全删
    ```
 
-**Why this order matters**: vault-adapter needs `<worktree_path>` to exist when E5 runs (to read commits via `git log <base>..HEAD`) and needs the handoff file present to read worktree_path/plan_path/linked_todo. Step 1 satisfies both. Step 3's `worktree remove` is destructive — it must come last.
+**Why this order matters**: vault-adapter needs `<worktree_path>` to exist when E5 runs (linked_todo / spec_path lookups) and needs the handoff file present to read worktree_path/plan_path. Step 1 satisfies both. Step 3's `worktree remove` is destructive — it must come last.
 
 **Why Write not heredoc**: the `PostToolUse Write` hook in `hooks.json` only fires on the `Write` tool. Using `cat > file << EOF` is a `Bash` call and won't trigger E5 via on-write (you'd have to rely solely on the pre-bash rm fallback, which is brittler).
 
