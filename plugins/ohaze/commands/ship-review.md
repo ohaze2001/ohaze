@@ -10,7 +10,9 @@ Continue the workflow started by `/ohaze:ship` after the background Codex run co
 
 ## Pre-flight
 
-1. Read `.ohaze/current-ship.json` from the project root. If missing, tell user to run `/ohaze:ship` first.
+1. Locate and read the handoff. `.ohaze/` lives inside the **worktree** (per `ship.md` Step B), not the main checkout. If the current `pwd` already contains `.ohaze/current-ship.json`, use it. Otherwise walk up from `pwd` to find a worktree with one. If still missing, tell user to run `/ohaze:ship` first.
+
+   `cd` into the worktree for the rest of this command so all `.ohaze/*` paths resolve correctly and commits land in the right branch.
 
 2. Verify Codex is actually done. Read `codex_pid_file` and `codex_log_file` from the handoff:
 
@@ -80,10 +82,14 @@ If no ADVERSARIAL findings, skip this section silently.
 
 ## Phase 7 — Finishing Menu (ohaze owns this — DO NOT invoke superpowers:finishing-a-development-branch directly)
 
-Once review verdict is PASS (or user accepted current state in step 5), detect remote availability first:
+Once review verdict is PASS (or user accepted current state in step 5):
 
 ```bash
-HAS_REMOTE=$(git -C <main_repo_path> remote 2>/dev/null | head -1)
+# 解析主仓 path（worktree list 第一条 = 主 checkout）
+main_repo_path=$(git -C <worktree_path> worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+
+# 检测 remote 用主仓（worktree 共享主仓的 remote 配置，但显式用主仓更稳）
+HAS_REMOTE=$(git -C "$main_repo_path" remote 2>/dev/null | head -1)
 ```
 
 Then present this 6-option menu. If `$HAS_REMOTE` is empty, prepend this note:
@@ -111,13 +117,8 @@ Use `AskUserQuestion` with these 6 options. Do NOT default the recommendation �
 For repos without a remote, or when you just want the worktree's commits to land on `<base_ref>` without opening a PR.
 
 ```bash
-# 1. 找到主仓 checkout 位置（git worktree list 第一条 = 主 checkout）
-main_repo_path=$(git -C <worktree_path> worktree list --porcelain | awk '/^worktree /{print $2; exit}')
-
-# 2. 主仓切到 base_ref
+# 主仓切到 base_ref，再 fast-forward merge
 git -C "$main_repo_path" checkout <base_ref>
-
-# 3. fast-forward merge
 git -C "$main_repo_path" merge <branch> --ff-only
 ```
 
@@ -128,25 +129,25 @@ If `--ff-only` fails (因为 `<base_ref>` 在 ship 期间前进了，不再是 w
 
 If user picks 1: `git merge <branch> --no-ff -m "merge: <feature> via ohaze"`. If user picks 2: stop, leave handoff for `/ohaze:ship-finish` to resume.
 
-On successful merge, write ship-result first (vault hook reads it before handoff is deleted), then cleanup in this order:
+On successful merge, finalize in this **strict order**:
 
-```bash
-# 1. 写 ship-result.json —— vault hook 立刻读取并跑 E5 finish
-cat > <main_repo_path>/.ohaze/ship-result.json << 'EOF'
-{"action":"merge","branch":"<branch>","target":"<base_ref>"}
-EOF
+1. **Use the `Write` tool** (not `cat > heredoc`, which doesn't trigger PostToolUse Write hook) to create `<worktree_path>/.ohaze/ship-result.json` with:
+   ```json
+   {"action":"merge","branch":"<branch>","target":"<base_ref>"}
+   ```
+   The vault hook fires `on-write` synchronously and runs E5 finish (writes discussions/decisions/progress, ticks CLAUDE.md).
 
-# 2. 删 handoff —— pre-bash 兜底触发 E5（如果 #1 失败 / sync_state 异常）
-rm <main_repo_path>/.ohaze/current-ship.json
-```
+2. Run `rm <worktree_path>/.ohaze/current-ship.json` via Bash. This is a fallback E5 trigger via `pre-bash` (dedup'd against step 1 by `sync_state.e5_completed`).
 
-Then ask: "清理 worktree 和分支吗?" (1=clean / 2=keep). On clean (推荐, 因为分支已合并到 base):
-```bash
-git -C "$main_repo_path" worktree remove <worktree_path>
-git -C "$main_repo_path" branch -D <branch>   # 已合并, 安全删
-```
+3. Ask: "清理 worktree 和分支吗?" (1=clean / 2=keep). On clean (推荐, 因为分支已合并到 base):
+   ```bash
+   git -C "$main_repo_path" worktree remove <worktree_path>
+   git -C "$main_repo_path" branch -D <branch>   # 已合并, 安全删
+   ```
 
-**重要**: handoff 必须在 worktree remove 之前删除，否则 vault-adapter 的 commits 收集和 CLAUDE.md 打勾会拿不到 worktree。`<ohaze_dir>` 在 finishing 流程里始终指 `<main_repo_path>/.ohaze/`，不是 worktree 内的。
+**Why this order matters**: vault-adapter needs `<worktree_path>` to exist when E5 runs (to read commits via `git log <base>..HEAD`) and needs the handoff file present to read worktree_path/plan_path/linked_todo. Step 1 satisfies both. Step 3's `worktree remove` is destructive — it must come last.
+
+**Why Write not heredoc**: the `PostToolUse Write` hook in `hooks.json` only fires on the `Write` tool. Using `cat > file << EOF` is a `Bash` call and won't trigger E5 via on-write (you'd have to rely solely on the pre-bash rm fallback, which is brittler).
 
 ### Option 2: 推送到远端
 
@@ -156,18 +157,20 @@ git -C <worktree_path> push -u origin <branch>
 
 If push fails (no remote, auth, etc.): surface the error verbatim, do NOT retry, ask user how to proceed.
 
-After successful push, write ship-result and delete handoff *before* any worktree cleanup (vault-adapter needs both to be in place):
-```bash
-# 1. ship-result.json — triggers vault E5 immediately
-cat > <main_repo_path>/.ohaze/ship-result.json << 'EOF'
-{"action":"push","branch":"<branch>","remote":"origin"}
-EOF
+After successful push, finalize in this **strict order**:
 
-# 2. delete handoff (pre-bash fallback for E5)
-rm <main_repo_path>/.ohaze/current-ship.json
-```
+1. **Use the `Write` tool** to create `<worktree_path>/.ohaze/ship-result.json` with:
+   ```json
+   {"action":"push","branch":"<branch>","remote":"origin"}
+   ```
+2. `rm <worktree_path>/.ohaze/current-ship.json` (Bash, pre-bash fallback E5).
+3. Ask: "继续保留 worktree 还是清理?" (1=keep, 2=clean). On clean:
+   ```bash
+   git -C "$main_repo_path" worktree remove <worktree_path>
+   git -C "$main_repo_path" branch -D <branch>
+   ```
 
-Then ask: "继续保留 worktree 还是清理?" (1=keep, 2=clean). On clean: `git worktree remove <worktree_path>` + `git branch -D <branch>` from the main checkout.
+(Same write/rm/cleanup ordering rule as Option 1 — see its block for the rationale.)
 
 ### Option 3: 创建 Pull Request
 
@@ -188,18 +191,16 @@ Generated via /ohaze:ship.
 Auto-generated by ohaze.
 ```
 
-After PR is created, write ship-result and delete handoff *before* any worktree cleanup:
-```bash
-# 1. ship-result.json — triggers vault E5 immediately
-cat > <main_repo_path>/.ohaze/ship-result.json << 'EOF'
-{"action":"pr","branch":"<branch>","remote":"origin","pr_url":"<pr_url>","pr_number":<pr_number>}
-EOF
+After PR is created, finalize in this **strict order**:
 
-# 2. delete handoff (pre-bash fallback for E5)
-rm <main_repo_path>/.ohaze/current-ship.json
-```
+1. **Use the `Write` tool** to create `<worktree_path>/.ohaze/ship-result.json` with:
+   ```json
+   {"action":"pr","branch":"<branch>","remote":"origin","pr_url":"<pr_url>","pr_number":<pr_number>}
+   ```
+2. `rm <worktree_path>/.ohaze/current-ship.json` (Bash, pre-bash fallback E5).
+3. Print the PR URL. Then same "keep or clean worktree" question (see Option 2 for cleanup commands).
 
-Print the PR URL. Then same "keep or clean worktree" question.
+(Same write/rm/cleanup ordering rule as Option 1.)
 
 ### Option 4: 保持现状
 
@@ -213,20 +214,20 @@ Stop.
 Confirm with the user once (this is destructive):
 > "这会删除分支 `<branch>` 和 worktree `<worktree_path>`, 所有提交丢失. 确认?"
 
-On confirm, write ship-result and delete handoff *before* removing the worktree (vault-adapter needs the worktree present to collect commits for the decisions doc):
-```bash
-# 1. ship-result.json — triggers vault E5 immediately
-cat > <main_repo_path>/.ohaze/ship-result.json << 'EOF'
-{"action":"discard","branch":"<branch>"}
-EOF
+On confirm, finalize in this **strict order**:
 
-# 2. delete handoff (pre-bash fallback for E5)
-rm <main_repo_path>/.ohaze/current-ship.json
+1. **Use the `Write` tool** to create `<worktree_path>/.ohaze/ship-result.json` with:
+   ```json
+   {"action":"discard","branch":"<branch>"}
+   ```
+2. `rm <worktree_path>/.ohaze/current-ship.json` (Bash, pre-bash fallback E5).
+3. Tear down worktree + branch:
+   ```bash
+   git -C "$main_repo_path" worktree remove --force <worktree_path>
+   git -C "$main_repo_path" branch -D <branch>
+   ```
 
-# 3. tear down worktree + branch
-git -C <main_repo_path> worktree remove --force <worktree_path>
-git -C <main_repo_path> branch -D <branch>
-```
+(Same write/rm/cleanup ordering rule as Option 1.)
 
 ### Option 6: 继续修改 (小改动)
 

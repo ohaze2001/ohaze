@@ -143,10 +143,14 @@ Codex therefore leaves uncommitted changes in the worktree. Before review, the o
 
 ### Phase 5.3: Write review-verdict.json (vault hook trigger)
 
-After the reviewer returns, **immediately** write the verdict to disk so the vault hook can capture it:
+After the reviewer returns, **immediately** write the verdict to disk so the vault hook can capture it.
 
-```bash
-cat > <ohaze_dir>/review-verdict.json << 'EOF'
+**Use the `Write` tool** (not a `Bash` heredoc) — vault-adapter's `hooks.json` only fires `PostToolUse` on `Write`. A heredoc would silently skip E_verdict (no PASS/FAIL row appended to the vault discussion, no ADVERSARIAL surfacing).
+
+Target file: `<ohaze_dir>/review-verdict.json` where `<ohaze_dir>` is the `.ohaze/` directory **inside the worktree** (same dir as `current-ship.json`).
+
+Content shape:
+```json
 {
   "iteration": <current_retry_count>,
   "verdict": "<PASS|FAIL>",
@@ -156,10 +160,8 @@ cat > <ohaze_dir>/review-verdict.json << 'EOF'
     "<ADVERSARIAL: design risk — file:line>"
   ]
 }
-EOF
 ```
 
-- `<ohaze_dir>` is the `.ohaze/` directory inside the worktree (same dir as `current-ship.json`).
 - **Include all CRITICAL, IMPORTANT, and ADVERSARIAL findings in `issues`** with their prefix preserved. Skip NITs.
 - For PASS without any ADVERSARIAL findings: `issues` is `[]`.
 - For PASS with ADVERSARIAL findings: include them — vault adapter surfaces them in discussions as advisory.

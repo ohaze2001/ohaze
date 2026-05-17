@@ -147,7 +147,9 @@ Before writing the handoff, ask the user which `- [ ]` in the source project's C
 
 1. Run `mkdir -p .ohaze` via Bash (relative to the worktree path).
 2. Verify the dir exists with `ls -d .ohaze`.
-3. THEN use the `Write` tool (or `Bash` + heredoc) to create `.ohaze/current-ship.json`.
+3. THEN use the `Write` tool to create `.ohaze/current-ship.json`.
+
+**Must be `Write` tool, not `cat > heredoc`**: vault-adapter's `hooks.json` only fires `PostToolUse` on the `Write` tool. A `Bash` heredoc bypasses E1 entirely — vault never records ship start, and the whole lifecycle chain degrades to silent failure.
 
 If you skip step 1, the first `Write` attempt will fail with "Error writing file", forcing a retry. Don't make that mistake — always `mkdir -p` first.
 
