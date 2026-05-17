@@ -78,15 +78,19 @@ Update `.ohaze/current-ship.json` to include the job id, pid file, and log file.
 
 (`codex_run_id` field — kept for vault-adapter back-compat — gets set to the same value as `codex_job_id`.)
 
-### Step 5 — Report to user
+### Step 5 — Report to user and schedule auto-resume
+
+Don't just stop after dispatch. The caller (`/ohaze:ship`) is responsible for scheduling the wakeup that auto-resumes into `/ohaze:ship-review`; this step's job is just to dispatch + report.
+
+Report to the user:
 
 > "Codex 已在后台跑 (job_id=`<id>`, sandbox=danger-full-access). 进度:
 > - `tail -f <log_file>` — 实时日志
 > - `ps -p $(cat <pid_file>)` — 进程状态
 >
-> 跑完后回 `/ohaze:ship-review`."
+> 主进程会自动接 Phase 5 review, 不需要手动触发."
 
-Then stop. Phases 5-6 happen in `/ohaze:ship-review`.
+Then return control to the caller — `/ohaze:ship` will call `ScheduleWakeup(prompt="/ohaze:ship-review")` and end the turn. Phases 5-6 happen on wakeup (or on a user-initiated `/ohaze:ship-review`).
 
 ### About `--wait` mode
 
@@ -98,7 +102,7 @@ The codex-rescue subagent still goes through `codex-companion.mjs` and inherits 
 
 ## Phase 5: Claude-side Review
 
-Trigger this when the Codex run completes (the pid in `<pid_file>` is no longer alive, or the log shows the end-of-run report). `/ohaze:ship-review` is the user-driven trigger to proceed.
+Trigger this when the Codex run completes (the pid in `<pid_file>` is no longer alive, or the log shows the end-of-run report). The normal entry path is the scheduled wakeup that `/ohaze:ship` fired (`prompt: "/ohaze:ship-review"`). The user can also invoke `/ohaze:ship-review` manually at any time.
 
 ### Phase 5.0: Apply Codex's pending changes as commits (REQUIRED)
 
@@ -288,7 +292,8 @@ Track retry counter starting at 0.
 
 - Does NOT translate plan to prompt — that's `ohaze:plan-to-codex-prompt`.
 - Does NOT run brainstorming, planning, worktree setup, or finishing — those are superpowers skills, orchestrated by `/ohaze:ship`.
-- Does NOT poll Codex status mid-run for `--background` mode. The `/ohaze:ship-review` command is the user-driven trigger to proceed.
+- Does NOT itself schedule the auto-resume — that's `/ohaze:ship`'s job (it calls `ScheduleWakeup` after this skill returns). The executor only dispatches Codex and returns; the orchestrator schedules.
+- Does NOT poll Codex synchronously. The polling pattern is: `/ohaze:ship` schedules wakeup → wakeup fires `/ohaze:ship-review` → its pre-flight checks pid → still alive re-schedules / done proceeds to Phase 5.
 
 ## Failure modes and recovery
 

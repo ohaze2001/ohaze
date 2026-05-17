@@ -1,7 +1,7 @@
 ---
 description: Resume an /ohaze:ship workflow after Codex finishes. Runs review loop (max 3 retries) then ohaze's 5-option finishing menu (with "继续修改" branch).
 argument-hint: "[--more] (optional: continue past the 3-retry limit)"
-allowed-tools: Bash, Read, Write, Edit, Skill, Agent, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, Skill, Agent, AskUserQuestion, ScheduleWakeup
 ---
 
 Continue the workflow started by `/ohaze:ship` after the background Codex run completes.
@@ -18,12 +18,19 @@ Continue the workflow started by `/ohaze:ship` after the background Codex run co
 
    ```bash
    if [[ -f "$codex_pid_file" ]] && kill -0 "$(cat "$codex_pid_file")" 2>/dev/null; then
-     echo "Codex 还在跑 (pid=$(cat "$codex_pid_file")). 用 tail -f $codex_log_file 看进度, 跑完后再回 /ohaze:ship-review."
-     exit 0
+     CODEX_ALIVE=1
+   else
+     CODEX_ALIVE=0
    fi
    ```
 
-   If the pid file is missing or the process is no longer alive, Codex finished (or crashed). Check the tail of `<codex_log_file>` for the end-of-run report block. If the log shows an unhandled error, surface it and stop — do NOT proceed with review on incomplete work.
+   **If Codex is still running (`CODEX_ALIVE=1`)**: do NOT exit. Re-schedule a wakeup and stop the turn:
+
+   - Call `ScheduleWakeup(delaySeconds=600, reason="codex still running for <feature>, elapsed <N>m", prompt="/ohaze:ship-review")`.
+   - Tell the user: *"Codex 还在跑 (pid=<pid>, elapsed=<N>m). 已重新 schedule 10 分钟后再 check, 自动接 Phase 5. 你可以继续别的事, 不需要手动回来."*
+   - End the turn. The next wakeup re-enters this same Pre-flight Step 2.
+
+   **If Codex is done (`CODEX_ALIVE=0`)**: check the tail of `<codex_log_file>` for the end-of-run report block. If the log shows an unhandled error, surface it and stop — do NOT proceed with review on incomplete work. Otherwise continue to Step 3 (and onward into Phase 5).
 
    Back-compat: older handoffs may have `codex_run_id` only (companion-issued task id). In that case fall back to `/codex:status <run_id>` — but those are legacy and shouldn't appear in new ships.
 

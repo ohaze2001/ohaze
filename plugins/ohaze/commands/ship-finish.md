@@ -1,7 +1,7 @@
 ---
 description: Re-enter finishing for an /ohaze:ship that was paused (option 3 "保持现状") or self-edited (option 5c). Optionally re-runs review, then shows the finishing menu.
 argument-hint: "[--skip-review] (skip the optional re-review)"
-allowed-tools: Bash, Read, Write, Edit, Skill, Agent, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, Skill, Agent, AskUserQuestion, ScheduleWakeup
 ---
 
 Resume finishing for a previously paused ship.

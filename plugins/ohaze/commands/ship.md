@@ -1,7 +1,7 @@
 ---
 description: End-to-end feature shipping. Brainstorm → plan → Codex execute → (later /ohaze:ship-review for review + finishing).
 argument-hint: "[feature description]"
-allowed-tools: Bash, Read, Write, Edit, Skill, Agent, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, Skill, Agent, AskUserQuestion, ScheduleWakeup
 ---
 
 Orchestrate the ohaze workflow for the user's request. Treat the user's argument as the feature description:
@@ -108,16 +108,28 @@ PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
 
    The skill dispatches `codex exec --sandbox danger-full-access` in the background (via Claude Code's `Bash(run_in_background)`) and records `codex_pid_file` / `codex_log_file` paths in the handoff.
 
-## Stop here
+## Auto-resume (do NOT just stop)
 
-The skill ends `/ohaze:ship` after Phase 4. Codex runs in the background. Tell the user:
+After Phase 4 dispatch, do NOT end the turn silently. Schedule a wakeup so you self-resume into `/ohaze:ship-review` without the user having to remember.
 
-> "Phase 1-4 完成. Codex 在后台执行 plan (job_id=`<id>`, sandbox=danger-full-access). 下一步:
-> - `tail -f <codex_log_file>` — 实时看 Codex 输出
-> - `ps -p $(cat <codex_pid_file>)` — 看进程是否还在
-> - `/ohaze:ship-review` — 跑完后触发审查 + finishing"
+1. Call `ScheduleWakeup`:
+   - `delaySeconds: 600` (10 min covers median Codex runs; smaller plans wake into an immediate Phase 5, larger plans wake into "still running" and re-schedule)
+   - `reason: "watching codex run for ship <feature>"`
+   - `prompt: "/ohaze:ship-review"` — fires the review command on wakeup; its pre-flight handles the "still running → re-schedule" loop
 
-DO NOT auto-poll. DO NOT trigger Phase 5 in this same `/ohaze:ship` invocation. The user invokes `/ohaze:ship-review` when they're ready.
+2. Tell the user, then end the turn:
+
+   > "Phase 1-4 完成. Codex 在后台执行 plan (job_id=`<id>`, sandbox=danger-full-access).
+   >
+   > 我已 ScheduleWakeup 10 分钟后自动 check 进度. 跑完会自动接 Phase 5 review → finishing menu, 不需要你手动触发.
+   >
+   > 中途想看:
+   > - `tail -f <codex_log_file>` — 实时日志
+   > - `ps -p $(cat <codex_pid_file>)` — 进程状态
+   >
+   > 如果你 `/exit` 退出 session, 回来跑 `/ohaze:ship-review` 续上。"
+
+DO NOT proceed inline to Phase 5 in this same `/ohaze:ship` invocation. Phase 5 only fires from the scheduled wakeup (or a user-initiated `/ohaze:ship-review`).
 
 ## Persisting context for /ohaze:ship-review
 
