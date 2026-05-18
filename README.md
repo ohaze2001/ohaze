@@ -149,11 +149,15 @@ ohaze 是一个 single-plugin marketplace（仓库根即 marketplace）。
 
 ## 路线图
 
-- [x] V1：核心 7 阶段闭环
+> **版本号说明**：V1.x 是历史主题版本叙事，保留不重写。从 1.6.0 起严格按 [SemVer 2.0.0](https://semver.org/lang/zh-CN/) 标。完整变更日志见 [`CHANGELOG.md`](CHANGELOG.md)。
+
+- [x] V1.0：核心 7 阶段闭环
 - [x] V1.1：4 个 bug 修复（writing-plans 菜单截断 / Codex bash 权限 / 沙箱 commit 拦截 / worktree 跳过）
 - [x] V1.5：`/ohaze:status` + finishing modify 选项 + `/ohaze:ship-finish`
-- [ ] V2：Obsidian 同步（spec/plan/progress 镜像到 vault）
-- [ ] V3：tool-router（按任务复杂度自动路由 Codex / Claude / Gemini）
+- [x] **1.6.0**：Vault 集成（ohaze 生命周期事件镜像到 `~/Brain`，含 discussions / decisions / progress / README 同步 + linked-todo 精确打勾）
+- [x] **1.7.0**：Plan 契约化（`ohaze:writing-plans` guidance-form）+ ADVERSARIAL review + sandbox `danger-full-access`
+- [x] **1.8.0**：Auto-resume（ScheduleWakeup 自续 ship 生命周期）+ 本地 merge 选项 + real-ship hardening
+- [ ] **2.0.0**：tool-router（按任务复杂度自动路由 Codex / Claude / Gemini / DeepSeek）— 计划中
 
 ## License
 

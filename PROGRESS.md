@@ -141,3 +141,74 @@ subagent 没有交互式权限弹框，必须预先放行。
 - 完成：codex-executor/SKILL.md — Phase 5.3：review 后写 review-verdict.json 触发 hook
 - 完成：ship-review.md — Options 1/2/4 在 terminal action 前写 ship-result.json
 - 完成：ship-finish.md — 明确 ship-result.json 写入时机说明
+
+---
+
+## 2026-05-18 — 版本号规范化（混合 SemVer）
+
+历史的 `V1.0 / V1.1 / V1.5` 主题版本叙事保留；从此之后所有版本号严格按 [SemVer 2.0.0](https://semver.org/lang/zh-CN/) 走。规则录入全局 `~/CLAUDE.md`，所有项目通用。
+
+把 2026-05-12 至 2026-05-18 这 18 个未版本化 commits 归类如下：
+
+---
+
+## 1.6.0 — Vault 集成（2026-05-12 → 2026-05-15）
+
+**主题**：把 ohaze 生命周期事件镜像到 `~/Brain`，让每次 ship 都自动留下 discussions / decisions / progress / README 同步。
+
+### Added
+- `adapters/vault-adapter.sh`：736 行的事件路由 + E1/E2/E4/E_pause/E5 完整 lifecycle handlers（`0d1d5f1`）
+- `hooks/hooks.json`：PostToolUse Write + PreToolUse Bash 注册在**插件内**，脱离 `~/.claude/settings.json` 全局依赖（`e927dbd`）
+- ship.md / ship-review.md / ship-finish.md：brainstorm 与 review 前静默加载 vault context（`4946d86`）
+- `_handle_verdict` / `_handle_result`：把 review-verdict.json 与 ship-result.json 同步到 vault（`40b9de0`）
+- E5 写 `decisions/<feature>.md` ADR：含 action / branch / PR URL / commits 数量 / 审查重试次数（`40b9de0`）
+- E5 同步源项目 CLAUDE.md：用户在 ship.md Step A 选定的 linked_todo 用 Python 字面 replace 打勾（`02802f4`）
+- ship.md：brainstorm 阶段读 related 项目 README（cross-project 知识图谱边）（`e166036`）
+
+### Fixed
+- 4 个 V2 ship-result chain blocking bug（`f2f08ce`）
+- 删除 last_active sed 死代码：vault README 用 `updated` 字段不是 `last_active`（`2f27913`）
+
+### Architecture
+- Hook 代码强约束、LLM 不参与写入决策；E5 用 `sync_state.e5_completed` 去重防止双触发
+
+---
+
+## 1.7.0 — Plan 契约化 + Sandbox 升级（2026-05-15 → 2026-05-16）
+
+**主题**：把 Codex 从"打字员"升回"实现者"；review 加设计挑战维度；绕过 codex-companion 的 workspace-write 锁死。
+
+### Added
+- `skills/writing-plans/SKILL.md`（305 行）：fork 自 `superpowers:writing-plans`，改为 **guidance-form**（contract + acceptance，不是 prescriptive code）（`defa9a0`）
+- "Reading the Spec" 章节：spec→plan 时如何把执行代码转写成契约描述，附转换对照表（`520ad82`）
+- ADVERSARIAL review 维度：reviewer subagent 三部分（契约合规 / 代码质量 / 对抗式设计挑战），ADVERSARIAL 仅 advisory 不阻塞 ship（`18dca08`）
+- codex-executor 改走 `codex exec --sandbox danger-full-access`，直接派发不经 codex-companion；ship 流程已 brainstorm/plan/review 三重 gate（`535b68c`）
+
+### Changed
+- `plan-to-codex-prompt` 改成薄包装：原来要 distill prescriptive code 现在直接 verbatim 嵌入 guidance plan（`64d9994`）
+
+---
+
+## 1.8.0 — Real-ship hardening + Auto-resume（2026-05-16 → 2026-05-18）
+
+**主题**：第一批真实项目跑出来的 bug 收尾；ScheduleWakeup 自续 ship 生命周期，用户不再手动接 Phase 5。
+
+### Added
+- `/ohaze:ship` 派发 Codex 后 `ScheduleWakeup(600s, "/ohaze:ship-review")`：自动接 review；review pre-flight 检查 codex pid，还在跑则再 schedule（`794f19f`）
+- Finishing 菜单第 6 选项已存在；新增 **Option 1 本地 merge**：`git merge --ff-only`，纯本地仓不开 PR 也能完成 ship（`daba82c`）
+
+### Fixed
+- `vault-adapter.sh` 3 个 real-ship blocking bug（`f508cd3`）
+- ship.md `.ohaze/` 路径修正 + 明确强制用 Write 工具（不能 heredoc，否则 PostToolUse hook 不触发）（`9bdeeb8`）
+- finishing Option 1：merge 前预算 commits 列表注入 `ship_result.commits`，避免 ff-merge 后 worktree `base..HEAD` 空导致 vault decisions 记 "Commits 数量=0"（`b679ee3`）
+
+---
+
+## 待发布动作（pending）
+
+- [ ] `plugin.json` version：`0.1.0` → `1.8.0`
+- [ ] `README.md` 路线图：V2 → 1.6/1.7/1.8 全部交付，V3 改 2.0.0 (tool-router) 作为下一目标
+- [ ] `CLAUDE.md` 当前目标段：同步到 1.8.0
+- [ ] 新建 `CHANGELOG.md`（Keep a Changelog 格式）
+- [ ] `git push origin main`（本地 18 commits ahead）
+- [ ] `git tag v1.6.0 / v1.7.0 / v1.8.0` 打回历史标签

@@ -65,12 +65,21 @@
 - `codex` plugin：codex:codex-rescue subagent + /codex:status /codex:result + scripts/codex-companion.mjs
 - 可选 `gh`：让 `/ohaze:status` 能拉远端 PR 列表
 
+## 版本号
+- 历史叙事（V1.0 / V1.1 / V1.5）保留，从 **1.6.0** 起严格 [SemVer 2.0.0](https://semver.org/lang/zh-CN/)
+- 全局规则见 `~/CLAUDE.md` 的 "版本号规范（SemVer 2.0.0）" 段
+- 完整变更日志：[`CHANGELOG.md`](CHANGELOG.md)
+- 当前版本：**1.8.0**（`plugins/ohaze/.claude-plugin/plugin.json`）
+
 ## 当前目标
-- [x] V1 骨架（5 个核心文件）
-- [x] V1 沙盒实测（subtract 函数）→ 发现 4 个 bug
+- [x] V1.0 骨架（5 个核心文件）
+- [x] V1.0 沙盒实测（subtract 函数）→ 发现 4 个 bug
 - [x] V1.1 修复（writing-plans 菜单 / bash fallback / 沙箱 commit / worktree 跳过）
 - [x] V1.5 新功能（status / finishing modify / ship-finish）
 - [x] V1.5 沙盒实测（multiply 函数 + jsdoc 双轮 modify）→ 全绿，0 retries
-- [x] 推 GitHub
-- [ ] V2：Obsidian 同步（spec/plan/progress 镜像到 vault）
-- [ ] V3：tool-router（按任务复杂度路由 Codex / Claude / Gemini / DeepSeek）
+- [x] V1.5 推 GitHub
+- [x] **1.6.0**：Vault 集成（vault-adapter + hooks + linked-todo + cross-project reads）
+- [x] **1.7.0**：Plan 契约化 + ADVERSARIAL review + sandbox `danger-full-access`
+- [x] **1.8.0**：Auto-resume（ScheduleWakeup）+ 本地 merge 选项 + real-ship hardening
+- [ ] 1.8.0 推 GitHub + 打 tag `v1.6.0 / v1.7.0 / v1.8.0`
+- [ ] **2.0.0**：tool-router（按任务复杂度路由 Codex / Claude / Gemini / DeepSeek）
