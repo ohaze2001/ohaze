@@ -10,6 +10,12 @@
 
 ## [Unreleased]
 
+### Fixed
+- `vault-adapter.sh`：decisions/discussions 文档的 Spec/Plan 路径记的是 worktree 内路径，`worktree remove` 后变死链 —— E5 finish 时按 `ship_action` 转主仓路径（merge/push/pr 转、discard 标注「未落主仓」），新增 `to_main_repo_path` helper；同步重写 discussions「## 启动」段的死链
+
+### Changed
+- `vault-adapter.sh` `pre-bash`：PreToolUse 对每条 Bash 都触发，先对原始 stdin 做廉价 `grep -q current-ship` 预过滤再走 python 解析；`=== event ===` 日志延后到命中真信号后才写，消除日志刷屏
+
 待规划：**2.0.0** — tool-router（按任务复杂度自动路由 Codex / Claude / Gemini / DeepSeek）。
 
 ---

@@ -81,6 +81,19 @@ main_repo_from_worktree() {
   echo "$wt" | sed 's|/\.claude/worktrees/.*||' | sed 's|/\.worktrees/.*||'
 }
 
+# 把 worktree 内的文件路径转成主仓路径
+# merge/push/pr 后文件随分支落主仓，worktree 在 finishing 末尾被 remove，
+# vault 文档应记主仓路径而非已删除的 worktree 路径。
+# 前缀不匹配时原样返回，避免 spec 不在 worktree 内时拼出垃圾路径。
+to_main_repo_path() {
+  local file_path="$1" wt="$2" main_repo="$3"
+  if [[ -n "$file_path" && -n "$wt" && -n "$main_repo" && "$file_path" == "$wt"/* ]]; then
+    echo "${main_repo}${file_path#"$wt"}"
+  else
+    echo "$file_path"
+  fi
+}
+
 # 从 worktree_path 提取项目名
 # /Users/x/Project/aura/.worktrees/feat-xxx              → aura
 # /Users/x/Project/hazeflow/.claude/worktrees/feat-foo   → hazeflow
@@ -485,10 +498,11 @@ _run_finish() {
 
   [[ -z "$worktree_path" ]] && { log "no worktree_path in handoff"; return 0; }
 
-  local proj feature ohaze_dir
+  local proj feature ohaze_dir main_repo
   proj=$(project_from_worktree "$worktree_path")
   feature=$(feature_from_plan "$plan_path")
   ohaze_dir=$(dirname "$handoff_path")
+  main_repo=$(main_repo_from_worktree "$worktree_path")
 
   # 读 sync state（含 e5_completed 去重 / discussions_path）
   local sync_json discussions_path e5_done
@@ -549,6 +563,20 @@ _run_finish() {
     fi
   fi
 
+  # ── spec/plan 路径：merge/push/pr 转主仓路径，discard 标注未落盘 ────
+  # current-ship.json 里记的是 worktree 内路径，worktree 在 finishing 末尾被
+  # remove → 直接透传会写出死链。merge/push/pr 文件随分支落主仓，转主仓路径。
+  local spec_ref="$spec_path" plan_ref="$plan_path" path_note=""
+  case "${ship_action:-}" in
+    merge|push|pr)
+      spec_ref=$(to_main_repo_path "$spec_path" "$worktree_path" "$main_repo")
+      plan_ref=$(to_main_repo_path "$plan_path" "$worktree_path" "$main_repo")
+      ;;
+    discard)
+      path_note="> worktree 已清理，以下为原 worktree 路径，文件未落主仓"
+      ;;
+  esac
+
   # ── 写 decisions ADR ──────────────────────────────────────────────
   local decisions_path="${VAULT}/20_Projects/${proj}/decisions/${feature}.md"
   local discussion_ref="[[20_Projects/${proj}/discussions/${feature}]]"
@@ -595,8 +623,9 @@ ${commits:-（无 commit）}
 
 ## 相关文件
 
-- **Spec**: \`${spec_path}\`
-- **Plan**: \`${plan_path}\`
+${path_note}
+- **Spec**: \`${spec_ref}\`
+- **Plan**: \`${plan_ref}\`
 EOF
   } > "$decisions_path"
   log "E5: wrote decisions doc: $decisions_path"
@@ -612,6 +641,24 @@ EOF
       "- **Commits**: ${commit_count} 个" \
       "- **决策记录**: [[decisions/${feature}]]"
     log "E5: appended completion to discussions"
+  fi
+
+  # ── 修 discussions「## 启动」里的 Spec/Plan 死链 ──────────────────
+  # E1 写启动记录时只有 worktree 路径；merge/push/pr 后改成主仓路径。
+  # 用反引号包裹做 needle（E1 写时即带反引号），避免误伤别处出现的裸路径。
+  if [[ -n "$discussions_path" && -f "$discussions_path" \
+        && ( "${ship_action:-}" == "merge" || "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" ) ]]; then
+    python3 -c '
+import sys, pathlib
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+for old, new in ((sys.argv[2], sys.argv[3]), (sys.argv[4], sys.argv[5])):
+    if old and new and old != new:
+        text = text.replace(f"`{old}`", f"`{new}`", 1)
+path.write_text(text)
+' "$discussions_path" "$spec_path" "$spec_ref" "$plan_path" "$plan_ref" 2>/dev/null \
+      && log "E5: rewrote discussions 启动 Spec/Plan to main-repo paths" \
+      || log "E5: discussions Spec/Plan rewrite skipped/failed"
   fi
 
   # ── 更新 progress.md ────────────────────────────────────────────
@@ -658,7 +705,7 @@ EOF
   linked_todo=$(parse_json "$sync_json" linked_todo)
   if [[ ( "${ship_action:-}" == "push" || "${ship_action:-}" == "pr" || "${ship_action:-}" == "merge" ) && -n "$linked_todo" ]]; then
     local source_claude
-    source_claude="$(main_repo_from_worktree "$worktree_path")/CLAUDE.md"
+    source_claude="${main_repo}/CLAUDE.md"
     if [[ -f "$source_claude" ]]; then
       # 用 python 做精确字面替换（不走 sed 正则，避免 todo 文本里有 . / * 等被解释）
       python3 -c '
@@ -699,12 +746,17 @@ handle_pre_bash() {
   local stdin_json
   stdin_json=$(cat)
 
+  # 廉价预过滤：PreToolUse 对每条 Bash 都触发，原始 stdin 不含 current-ship
+  # 就直接退出，跳过 python 解析（无谓开销 + log 刷屏的根源）。
+  printf '%s' "$stdin_json" | grep -q 'current-ship' || return 0
+
   local cmd
   cmd=$(parse_nested "$stdin_json" tool_input command)
 
   if ! echo "$cmd" | grep -q 'rm.*current-ship\.json'; then
     return 0
   fi
+  log "=== event=pre-bash ==="
   log "pre-bash triggered: rm current-ship.json"
 
   local handoff_path
@@ -719,15 +771,16 @@ handle_pre_bash() {
 
 # ─── main ─────────────────────────────────────────────────────────────
 
-log "=== event=${EVENT} ==="
-
 # 确保 Brain 目录存在
 [[ ! -d "$VAULT" ]] && { log "Brain vault not found: $VAULT"; exit 0; }
 
+# pre-bash 对每条 Bash 命令都触发 → 日志放进 handle_pre_bash 命中后再写，
+# 否则会刷屏（on-write 才是真信号）。
 case "$EVENT" in
-  on-write) handle_on_write ;;
+  on-write) log "=== event=on-write ==="; handle_on_write ;;
   pre-bash) handle_pre_bash ;;
   *)
+    log "=== event=${EVENT} ==="
     log "unknown event: $EVENT"
     exit 0
     ;;
