@@ -87,5 +87,4 @@
 - [x] **1.8.0**：Auto-resume（ScheduleWakeup）+ 本地 merge 选项 + real-ship hardening
 - [x] **1.9.0**：finish menu 项目类型化 + 文档漂移自动检测 + Codex session 精确 resume + finishing skill 抽取
 - [x] **1.9.1**：codex 插件彻底弃用 + 修正错误的 finishing 菜单改动 + vault-adapter 死链修复
-- [ ] 补打历史 tag `v1.6.0 / v1.7.0 / v1.8.0 / v1.9.0`
 - [ ] **2.0.0**：tool-router（按任务复杂度路由 Codex / Claude / Gemini / DeepSeek）
