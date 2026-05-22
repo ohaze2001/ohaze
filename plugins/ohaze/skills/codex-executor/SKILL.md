@@ -98,10 +98,6 @@ Then return control to the caller — `/ohaze:ship` will call `ScheduleWakeup(pr
 
 If the caller passed `mode=--wait`, drop the `&` and `run_in_background` — let `codex exec` run in the foreground and proceed inline to Phase 5 in the same turn.
 
-### What about `codex:codex-rescue` subagent?
-
-The codex-rescue subagent still goes through `codex-companion.mjs` and inherits its sandbox lockdown. ohaze no longer dispatches through it. If you need codex-rescue's gpt-5-4-prompting refinement layer, that's a separate use case (e.g., `/codex:rescue` for one-shot ad-hoc help) — not part of the ship flow.
-
 ## Phase 5: Claude-side Review
 
 Trigger this when the Codex run completes (the pid in `<pid_file>` is no longer alive, or the log shows the end-of-run report). The normal entry path is the scheduled wakeup that `/ohaze:ship` fired (`prompt: "/ohaze:ship-review"`). The user can also invoke `/ohaze:ship-review` manually at any time.
@@ -325,7 +321,7 @@ If a bug is found after finishing completes, start a **新 fix ship** with a new
 
 ## Failure modes and recovery
 
-- **`codex` binary not found**: report the failure, suggest `/codex:setup` if not yet run. Do not improvise an inline implementation.
+- **`codex` binary not found**: report the failure; tell the user to install the `codex` CLI (`npm install -g @openai/codex`) and authenticate (`codex login`). Do not improvise an inline implementation.
 - **Background nohup exits immediately (pid no longer alive within 5s)**: tail the log file — Codex likely refused to start (auth issue, sandbox flag rejected by old codex version, prompt file unreadable). Surface the actual error.
 - **Reviewer subagent returns malformed verdict**: re-dispatch the reviewer once with stricter format guidance. If it fails again, fall back to asking user to read `git diff` and decide.
 - **Worktree state is dirty after Codex log says done**: read the log's `Notable implementation choices` and `Touched files` to confirm completion intent. The orchestrator should then commit per the Task message mapping in Phase 5.0.

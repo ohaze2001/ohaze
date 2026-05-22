@@ -54,7 +54,9 @@
 - `codex` CLI 二进制（`@openai/codex`）：ship 流程直接调 `codex exec`，硬依赖
 
 ### 可选
-- `codex@openai-codex` 插件：ship 流程**不再依赖**；仅 `/codex:rescue`、`/codex:setup` 等 ship 之外的功能用到。若要用 codex-rescue subagent，`~/.claude/settings.json` 的 `permissions.allow` 需含 `"Bash(node:*)"`
+- `gh` CLI：让 `/ohaze:status` 能拉远端 PR 列表（未装则静默跳过该段）
+
+> `codex` 插件（`codex@openai-codex`）**已完全弃用**，ohaze 任何流程都不依赖它。ship 只依赖 `codex` CLI 二进制。
 
 ## 常用命令
 - 本地安装（开发期，无需推 GitHub）：`/plugin marketplace add /Users/apple/Project/ohaze` → `/plugin install ohaze@ohaze`
@@ -64,8 +66,7 @@
 
 ## 外部依赖
 - `superpowers` plugin：brainstorming / writing-plans / using-git-worktrees（审查不依赖 superpowers，用 general-purpose subagent）
-- `codex` CLI 二进制：ship 流程直接调 `codex exec`（不经 codex 插件 / codex-companion.mjs）
-- `codex` plugin（可选）：仅 `/codex:rescue` 等 ship 之外功能用到
+- `codex` CLI 二进制：ship 流程直接调 `codex exec`（`codex` 插件已完全弃用，不依赖 codex-companion.mjs）
 - 可选 `gh`：让 `/ohaze:status` 能拉远端 PR 列表
 
 ## 版本号

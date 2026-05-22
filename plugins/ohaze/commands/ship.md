@@ -12,14 +12,15 @@ If `$ARGUMENTS` is empty, ask the user what they want to ship before proceeding.
 
 ## Pre-flight
 
-1. Verify both required plugins are present:
+1. Verify prerequisites are present:
    ```bash
-   ls ~/.claude/plugins/marketplaces/openai-codex/plugins/codex/.claude-plugin/plugin.json
    ls ~/.claude/plugins/cache/claude-plugins-official/superpowers/*/skills/brainstorming/SKILL.md
+   command -v codex
    ```
-   If either is missing, stop and tell the user to install:
-   - `/plugin install superpowers@claude-plugins-official`
-   - `/plugin install codex@openai-codex`
+   - If superpowers is missing, stop and tell the user to install it: `/plugin install superpowers@claude-plugins-official`.
+   - If the `codex` CLI binary is missing, stop and tell the user to install it (`npm install -g @openai/codex`) and authenticate (`codex login`).
+
+   The `codex` plugin is NOT a dependency — the ship flow calls the `codex` CLI binary directly.
 
 2. Detect current project: `pwd` and `git rev-parse --show-toplevel`. Confirm with user this is the project they want to ship in.
 

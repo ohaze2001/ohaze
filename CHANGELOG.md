@@ -12,9 +12,11 @@
 
 ### Fixed
 - `vault-adapter.sh`：decisions/discussions 文档的 Spec/Plan 路径记的是 worktree 内路径，`worktree remove` 后变死链 —— E5 finish 时按 `ship_action` 转主仓路径（merge/push/pr 转、discard 标注「未落主仓」），新增 `to_main_repo_path` helper；同步重写 discussions「## 启动」段的死链
+- 撤回 1.9.0 里把 `ohaze:finishing` 菜单从 `AskUserQuestion` 改成纯文字的改动（基于「`AskUserQuestion` 限 4 项」的错误假设——实测可渲染 5+ 项），恢复 `AskUserQuestion` 5 项菜单
 
 ### Changed
 - `vault-adapter.sh` `pre-bash`：PreToolUse 对每条 Bash 都触发，先对原始 stdin 做廉价 `grep -q current-ship` 预过滤再走 python 解析；`=== event ===` 日志延后到命中真信号后才写，消除日志刷屏
+- `codex` 插件完全弃用：`ship.md` Pre-flight 不再检查 / 要求安装 codex 插件（改为检查 `codex` CLI 二进制）；`status.md` 删除 `codex-companion.mjs` back-compat fallback；`codex-executor` 删除 codex-rescue 段、binary 缺失改提示装 CLI；`CLAUDE.md` / `README.md` 清除 codex 插件作为依赖的描述
 
 待规划：**2.0.0** — tool-router（按任务复杂度自动路由 Codex / Claude / Gemini / DeepSeek）。
 

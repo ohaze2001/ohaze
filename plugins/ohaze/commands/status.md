@@ -68,7 +68,7 @@ For each worktree, gather:
    fi
    ```
 
-   Back-compat: if only `codex_run_id` (no pid_file) is present in the handoff, fall back to `node "${codex_root}scripts/codex-companion.mjs" status <run_id> --json` where `${codex_root}` is `~/.claude/plugins/cache/openai-codex/codex/<latest>/`.
+   Back-compat: legacy handoffs that predate 1.7.0 may carry only `codex_run_id` with no `pid_file`. For those, mark the codex job state as `unknown` — the codex plugin / `codex-companion.mjs` is no longer a dependency and is not consulted.
 
 4. **Last activity** — modification time of newest file in worktree:
    ```bash
@@ -133,7 +133,6 @@ After the table, print one line summarizing total state:
 
 - `git worktree list` returns no output: just show the main worktree, note "no .worktrees/ directories"
 - handoff JSON is malformed: skip that worktree's handoff fields, log a single line warning
-- codex-companion.mjs not found (codex plugin uninstalled): skip codex job state silently
 - gh not authenticated: skip PR section silently
 
 ## Notes
