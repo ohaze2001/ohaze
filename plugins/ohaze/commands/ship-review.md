@@ -60,7 +60,7 @@ PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
    - Pass: `plan_path`, `base_ref`, `worktree_path` from the handoff file
    - The skill runs Phase 5.0 first (auto-commit any pending changes Codex left behind)
    - Then Phase 5.1 (compute diff) and Phase 5.2 (dispatch reviewer subagent)
-   - On FAIL, the skill loops: format issues → `codex exec resume --last` → re-review (up to 3 times)
+   - On FAIL, the skill loops: format issues → `codex exec resume <codex_session_id>` → re-review (up to 3 times; warned fallback only if the session id is missing)
    - Update `.ohaze/current-ship.json` `retries` counter after each iteration
 
 5. If after the loop the verdict is still FAIL and `--more` was not passed, the executor stops and presents 3 options to the user:
@@ -87,284 +87,31 @@ Then proceed to Phase 7. Do not auto-loop into modify — the user will pick opt
 
 If no ADVERSARIAL findings, skip this section silently.
 
-## Phase 7 — Finishing Menu (ohaze owns this — DO NOT invoke superpowers:finishing-a-development-branch directly)
-
-Once review verdict is PASS (or user accepted current state in step 5):
-
-```bash
-# 解析主仓 path（worktree list 第一条 = 主 checkout）
-main_repo_path=$(git -C <worktree_path> worktree list --porcelain | awk '/^worktree /{print $2; exit}')
-
-# 检测 remote 用主仓（worktree 共享主仓的 remote 配置，但显式用主仓更稳）
-HAS_REMOTE=$(git -C "$main_repo_path" remote 2>/dev/null | head -1)
-```
-
-Then present this 6-option menu. If `$HAS_REMOTE` is empty, prepend this note:
-
-```
-⚠️ 当前仓库无 git remote，选项 2/3 会因 push 失败而无法完成 — 纯本地仓请选 1（本地合并）。
-```
-
-Menu:
-
-```
-实现完成, 测试 [N/N] 通过. 请选择:
-1. 合并回主分支 (本地 git merge --ff-only, 适合纯本地仓 / 不开 PR)
-2. 推送到远端 (git push, 不开 PR)
-3. 创建 Pull Request (推 + gh pr create)
-4. 保持现状 (稍后 /ohaze:ship-finish 处理)
-5. 丢弃此次工作
-6. 继续修改 (小改动)
-```
-
-Use `AskUserQuestion` with these 6 options. Do NOT default the recommendation — let the user pick deliberately.
-
-### Option 1: 合并回主分支（本地）
-
-For repos without a remote, or when you just want the worktree's commits to land on `<base_ref>` without opening a PR.
-
-```bash
-# 1. 先算 commits（merge 之前 branch 还跟 base 分叉，git log 才有内容）
-PRE_MERGE_COMMITS=$(git -C "$main_repo_path" log "<base_ref>..<branch>" --oneline 2>/dev/null)
-PRE_MERGE_COUNT=$(printf '%s' "$PRE_MERGE_COMMITS" | grep -c . || echo 0)
-
-# 2. 主仓切到 base_ref，再 fast-forward merge
-git -C "$main_repo_path" checkout <base_ref>
-git -C "$main_repo_path" merge <branch> --ff-only
-```
-
-**Why pre-compute commits**: `git merge --ff-only` 把 base 推到 branch 的位置后，`base..HEAD` 在 worktree 内是空的（两者同 sha），vault-adapter 走 fallback 算不到 commits → decisions doc 里"Commits 数量 = 0"。必须在 merge 之前拿到 commits 列表，传给 vault hook。
-
-If `--ff-only` fails (因为 `<base_ref>` 在 ship 期间前进了，不再是 worktree 的祖先), surface the error and ask:
-> "Fast-forward 失败 — `<base_ref>` 在 ship 期间有新提交。选项:
-> 1. 创建 merge commit (`git merge --no-ff <branch>`)
-> 2. 退出, 我自己处理 (rebase 或 cherry-pick)"
-
-If user picks 1: `git merge <branch> --no-ff -m "merge: <feature> via ohaze"`. If user picks 2: stop, leave handoff for `/ohaze:ship-finish` to resume.
-
-On successful merge, finalize in this **strict order**:
-
-1. **Use the `Write` tool** (not `cat > heredoc`, which doesn't trigger PostToolUse Write hook) to create `<worktree_path>/.ohaze/ship-result.json`. **Embed the pre-computed commits**:
-   ```json
-   {
-     "action": "merge",
-     "branch": "<branch>",
-     "target": "<base_ref>",
-     "commits": "<PRE_MERGE_COMMITS string verbatim, newlines preserved>",
-     "commit_count": <PRE_MERGE_COUNT>
-   }
-   ```
-   vault-adapter prefers `ship_result.commits` over its own `git log`; this is the only reliable way for merge to record commits because the worktree's `base..HEAD` is empty post-merge.
-
-   The vault hook fires `on-write` synchronously and runs E5 finish (writes discussions/decisions/progress, ticks CLAUDE.md).
-
-2. Run `rm <worktree_path>/.ohaze/current-ship.json` via Bash. This is a fallback E5 trigger via `pre-bash` (dedup'd against step 1 by `sync_state.e5_completed`).
-
-3. Ask: "清理 worktree 和分支吗?" (1=clean / 2=keep). On clean (推荐, 因为分支已合并到 base):
-   ```bash
-   git -C "$main_repo_path" worktree remove <worktree_path>
-   git -C "$main_repo_path" branch -D <branch>   # 已合并, 安全删
-   ```
-
-**Why this order matters**: vault-adapter needs `<worktree_path>` to exist when E5 runs (linked_todo / spec_path lookups) and needs the handoff file present to read worktree_path/plan_path. Step 1 satisfies both. Step 3's `worktree remove` is destructive — it must come last.
-
-**Why Write not heredoc**: the `PostToolUse Write` hook in `hooks.json` only fires on the `Write` tool. Using `cat > file << EOF` is a `Bash` call and won't trigger E5 via on-write (you'd have to rely solely on the pre-bash rm fallback, which is brittler).
-
-### Option 2: 推送到远端
-
-```bash
-git -C <worktree_path> push -u origin <branch>
-```
-
-If push fails (no remote, auth, etc.): surface the error verbatim, do NOT retry, ask user how to proceed.
-
-After successful push, finalize in this **strict order**:
-
-1. **Use the `Write` tool** to create `<worktree_path>/.ohaze/ship-result.json` with:
-   ```json
-   {"action":"push","branch":"<branch>","remote":"origin"}
-   ```
-2. `rm <worktree_path>/.ohaze/current-ship.json` (Bash, pre-bash fallback E5).
-3. Ask: "继续保留 worktree 还是清理?" (1=keep, 2=clean). On clean:
-   ```bash
-   git -C "$main_repo_path" worktree remove <worktree_path>
-   git -C "$main_repo_path" branch -D <branch>
-   ```
-
-(Same write/rm/cleanup ordering rule as Option 1 — see its block for the rationale.)
-
-### Option 3: 创建 Pull Request
-
-```bash
-git -C <worktree_path> push -u origin <branch>
-gh pr create --base <base_ref> --head <branch> --title "<derived from spec or commit>" --body "<see template below>"
-```
-
-PR body template:
-```
-Generated via /ohaze:ship.
-
-**Spec:** <spec_path>
-**Plan:** <plan_path>
-**Codex retries:** <N>
-**Reviewer verdict:** PASS
-
-Auto-generated by ohaze.
-```
-
-After PR is created, finalize in this **strict order**:
-
-1. **Use the `Write` tool** to create `<worktree_path>/.ohaze/ship-result.json` with:
-   ```json
-   {"action":"pr","branch":"<branch>","remote":"origin","pr_url":"<pr_url>","pr_number":<pr_number>}
-   ```
-2. `rm <worktree_path>/.ohaze/current-ship.json` (Bash, pre-bash fallback E5).
-3. Print the PR URL. Then same "keep or clean worktree" question (see Option 2 for cleanup commands).
-
-(Same write/rm/cleanup ordering rule as Option 1.)
-
-### Option 4: 保持现状
-
-Do nothing destructive. Update `.ohaze/current-ship.json` to set `state: "kept"` (so `/ohaze:status` and `/ohaze:ship-finish` know how to resume). Print:
-> "Worktree 保留在 `<worktree_path>`. 想继续时跑 `/ohaze:ship-finish` 或 `cd <worktree_path>` 手改后再跑."
-
-Stop.
-
-### Option 5: 丢弃
-
-Confirm with the user once (this is destructive):
-> "这会删除分支 `<branch>` 和 worktree `<worktree_path>`, 所有提交丢失. 确认?"
-
-On confirm, finalize in this **strict order**:
-
-1. **Use the `Write` tool** to create `<worktree_path>/.ohaze/ship-result.json` with:
-   ```json
-   {"action":"discard","branch":"<branch>"}
-   ```
-2. `rm <worktree_path>/.ohaze/current-ship.json` (Bash, pre-bash fallback E5).
-3. Tear down worktree + branch:
-   ```bash
-   git -C "$main_repo_path" worktree remove --force <worktree_path>
-   git -C "$main_repo_path" branch -D <branch>
-   ```
-
-(Same write/rm/cleanup ordering rule as Option 1.)
-
-### Option 6: 继续修改 (小改动)
-
-Enter the modify sub-flow (see next section). After the modify sub-flow returns, **loop back to this 6-option menu** (the user might want to modify again, or now finish).
-
-## Modify Sub-Flow (Option 6)
-
-When user picks 6:
-
-1. Ask user to describe the change:
-   > "请描述改动 (可以是改名/加注释/修边界 case 之类的小事):"
-
-2. Capture the description as `change_description`.
-
-3. Ask who handles it:
-   ```
-   1. Codex 续跑 (适合需要遵循 plan 风格、跨文件改动)
-   2. Claude 主线程直接改 (适合改名、加注释、修单行 bug)
-   3. 我自己改 (退出, 我去 .worktrees 改完跑 /ohaze:ship-finish 回来)
-   ```
-
-### 5a — Codex 续跑
-
-Build a delta prompt:
-```xml
-<task>
-The implementation in this worktree was reviewed and approved, but the user wants this small adjustment before finishing:
-
-{change_description}
-
-Apply the change. Stay narrow — only this adjustment, do not refactor anything else.
-</task>
-
-<commit_handling>
-Sandbox blocks .git/. Do not commit. Just write the changes; orchestrator will commit with a `refactor:` or `fix:` style message.
-</commit_handling>
-
-<verification_loop>
-After applying, run `{project_test_command}`. All tests must pass.
-</verification_loop>
-
-<action_safety>
-- Only the requested adjustment, nothing else.
-- No new dependencies.
-- Don't touch unrelated files.
-</action_safety>
-```
-
-Write the prompt to `<worktree>/.ohaze/codex-modify.xml` via the Write tool, then resume the same Codex thread (NOT a fresh one):
-
-```bash
-codex exec resume --last \
-  --sandbox danger-full-access \
-  --cd <worktree_path> \
-  < <worktree>/.ohaze/codex-modify.xml \
-  2>&1 | tee -a <codex_log_file>
-```
-
-Foreground (no `&`) — user is engaged, blocking is fine.
-
-If `codex exec resume --last` cannot find the prior thread (rare; happens if codex was restarted between sessions), fall back to a fresh `codex exec` with the modify prompt embedded inside a `<task>` block referencing the original goal.
-
-After Codex returns, run codex-executor's Phase 5.0 again (auto-commit pending changes with a derived message based on `change_description`).
-
-Then ask:
-> "改动已落地. 是否再跑一次 review 确认?"
-> "1. 是 (推荐)"
-> "2. 否, 直接回 finishing 菜单"
-
-If 1: re-dispatch reviewer subagent (no retry counter increment, this is a user-initiated tweak).
-Loop back to Phase 7 finishing menu.
-
-### 5b — Claude 主线程直接改
-
-Use `Read` to inspect relevant files, then `Edit` (or `Write` for new files) to apply the change. Run the project test command:
-```bash
-cd <worktree_path> && <project_test_command>
-```
-
-If tests pass: commit with message like `refactor: <one-line description>` or whatever fits.
-
-If tests fail: report the failure, ask user "我修一下还是退回让你处理?" (1=fix, 2=hand back).
-
-After commit, same review-or-skip prompt as 5a, then loop back to finishing menu.
-
-### 5c — 我自己改 (self-edit)
-
-Update `.ohaze/current-ship.json` set `state: "self-edit-pending"`. Tell user:
-> "退出当前 session. 去 `<worktree_path>` 改完代码后, 跑 `/ohaze:ship-finish` 回来继续."
-
-Stop.
-
-## Cleanup (after terminal options 1/2/3/5)
-
-The terminal options (1 merge / 2 push / 3 PR / 5 discard) each write `ship-result.json` and `rm` the handoff *before* tearing down the worktree — that ordering matters because vault-adapter needs both files present (and the worktree intact) to finalize the decisions doc and tick CLAUDE.md.
-
-For option 4 (keep) and 6c (self-edit), the handoff stays so `/ohaze:ship-finish` can resume.
-
-## Final Summary (after terminal options 1/2/3/5)
-
-Print:
-- Spec path
-- Plan path
-- Codex retries used (review-loop iterations only, modify-loop iterations excluded for clarity)
-- Modify-loop iterations (separate counter)
-- Final disposition (pushed / PR-opened / discarded)
+## Phase 7 — Invoke `ohaze:finishing`
+
+Once review verdict is PASS (or user accepted current state in step 5), invoke the `ohaze:finishing` skill. Pass the full finishing context from `.ohaze/current-ship.json` and the latest verdict path:
+
+- `worktree_path`
+- `base_ref`
+- `branch`
+- `plan_path`
+- `spec_path`
+- `retries`
+- `linked_todo`
+- `codex_session_id`
+- `review_verdict_path`: `<worktree_path>/.ohaze/review-verdict.json`
+
+The finishing skill owns Phase 7: project-type detection, recommended finish chain, document finish, terminal result files, cleanup ordering, and the modify sub-flow.
 
 ## Failure Modes
 
-- `<codex_log_file>` tail shows Codex genuinely failed (not just incomplete): surface the error verbatim; do NOT enter review loop. Suggest the user run `codex exec resume --last --sandbox danger-full-access --cd <worktree>` manually with a corrective prompt.
+- `<codex_log_file>` tail shows Codex genuinely failed (not just incomplete): surface the error verbatim; do NOT enter review loop. Suggest the user run an exact `codex exec resume <codex_session_id> --sandbox danger-full-access --cd <worktree>` manually with a corrective prompt, or warn before using the `--last` fallback if the session id is absent.
 - Reviewer subagent returns malformed verdict twice: fall back to asking user to read `git diff` and judge.
 - Handoff file references a worktree path that no longer exists: stop, surface, ask user.
 - Push fails (no remote, auth missing): surface error, hand back to menu (don't auto-retry).
 
 ## Notes
 
-- The 5-option menu is owned by ohaze; we do NOT invoke `superpowers:finishing-a-development-branch`. This avoids menu duplication and keeps modify-flow inside the same orchestration.
+- The 5-option menu is owned by `ohaze:finishing`; we do NOT invoke `superpowers:finishing-a-development-branch`. This avoids menu duplication and keeps modify-flow inside the same orchestration.
 - Modify loop iterations don't count against the 3-retry review cap — they're user-initiated, not reviewer-driven.
-- After option 5a (Codex) or 5b (Claude), we always return to the menu. Only options 1/2/4 are terminal.
+- After modify branches 5a (Codex) or 5b (Claude), finishing always returns to the menu.

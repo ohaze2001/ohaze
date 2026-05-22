@@ -19,7 +19,7 @@ Resume finishing for a previously paused ship.
    - Otherwise tell user: "没找到 ohaze handoff. 这个 ship 可能已经 finish 过了, 或者你需要先跑 /ohaze:ship 启动一个."
    - Stop.
 
-3. Parse the handoff. Capture: `plan_path`, `base_ref`, `worktree_path`, `spec_path`, `state`, `retries`.
+3. Parse the handoff. Capture: `plan_path`, `base_ref`, `worktree_path`, `spec_path`, `state`, `retries`, `branch`, `linked_todo`, `codex_session_id`.
 
 4. Verify the worktree still exists at `worktree_path`. If gone:
    - Tell user "Worktree `<path>` 已删除. handoff 是 stale, 我帮你清掉."
@@ -95,37 +95,21 @@ If Step 2 ran a re-review, or if the prior verdict file at `<worktree>/.ohaze/re
 
 Then proceed. If no ADVERSARIAL findings, skip silently.
 
-## Step 3 — Finishing Menu
+## Step 3 — Invoke `ohaze:finishing`
 
-Present the same 6-option menu as `/ohaze:ship-review`. Detect remote first and prepend the no-remote warning if applicable (see ship-review.md for details):
+Invoke the `ohaze:finishing` skill. Pass the full finishing context from `.ohaze/current-ship.json` and the latest verdict path:
 
-```
-请选择:
-1. 合并回主分支 (本地 git merge --ff-only, 适合纯本地仓 / 不开 PR)
-2. 推送到远端 (git push, 不开 PR)
-3. 创建 Pull Request (推 + gh pr create)
-4. 保持现状 (再次保留, 稍后用 /ohaze:ship-finish 回来)
-5. 丢弃此次工作
-6. 继续修改 (小改动)
-```
+- `worktree_path`
+- `base_ref`
+- `branch`
+- `plan_path`
+- `spec_path`
+- `retries`
+- `linked_todo`
+- `codex_session_id`
+- `review_verdict_path`: `<worktree_path>/.ohaze/review-verdict.json`
 
-The behavior of each option is **identical to `/ohaze:ship-review`'s Phase 7**. Reuse that logic — do not duplicate it. This includes writing `.ohaze/ship-result.json` before each terminal action (options 1/2/3/5) as described there.
-
-## Cleanup
-
-- Options 1 / 2 / 3 / 5: write `ship-result.json` first (vault hook), then remove handoff file.
-- Option 4: keep handoff (state = "kept"), tell user how to come back.
-- Option 6: enter modify sub-flow, loop back to menu.
-
-## Final Summary
-
-After a terminal action, print:
-- Spec path
-- Plan path
-- Codex review retries used
-- Modify iterations used (if any)
-- Manual edits detected and committed (if any)
-- Final disposition
+The finishing skill owns project-type detection, recommended finish chain, document finish, terminal result files, cleanup ordering, and the modify sub-flow.
 
 ## Failure Modes
 
