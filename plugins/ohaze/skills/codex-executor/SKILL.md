@@ -17,6 +17,8 @@ Hand a translated XML prompt to Codex via the `codex` plugin, then run the Claud
 - `codex_prompt` (required): the full XML string from `ohaze:plan-to-codex-prompt`.
 - `plan_path` (required): the absolute path to the plan markdown, used by the reviewer.
 - `base_ref` (required): the git ref Codex's work started from (typically the worktree's parent branch, e.g. `main`).
+- `worktree_path` (required for review/retry): the ship worktree path.
+- `codex_session_id` (optional but expected): read from `.ohaze/current-ship.json`; used for exact `codex exec resume <codex_session_id>`.
 - `mode` (optional, default `--background`): either `--background` or `--wait`.
 
 ## Phase 4: Dispatch Codex (direct `codex exec`, full-access sandbox)
@@ -162,11 +164,15 @@ Content shape:
     "<CRITICAL: issue — file:line>",
     "<IMPORTANT: issue — file:line>",
     "<ADVERSARIAL: design risk — file:line>"
+  ],
+  "doc_drift": [
+    "<section>: <失真描述>"
   ]
 }
 ```
 
 - **Include all CRITICAL, IMPORTANT, and ADVERSARIAL findings in `issues`** with their prefix preserved. Skip NITs.
+- Include DOC-DRIFT findings in `doc_drift` as strings. Use `[]` when there is no document drift.
 - For PASS without any ADVERSARIAL findings: `issues` is `[]`.
 - For PASS with ADVERSARIAL findings: include them — vault adapter surfaces them in discussions as advisory.
 - For FAIL: include all CRITICAL/IMPORTANT/ADVERSARIAL entries (the user needs the full picture before retry).
@@ -186,7 +192,7 @@ Worktree: {worktree_path}
 {vault_context}
 </vault_context>
 
-Your three-part review:
+Your four-part review:
 
 PART 1 — Contract compliance:
 - Read the guidance plan at `{plan_path}` — this is what Codex was given. It contains Behavior Contracts, Files lists, and Acceptance Criteria per Task, not prescriptive code.
@@ -201,7 +207,15 @@ PART 2 — Code quality:
 - Do NOT flag "Codex's implementation choice differs from what I would have written" — that's autonomy by design.
 - If vault_context is non-empty: also flag violations of past project decisions or user preferences noted there.
 
-PART 3 — Adversarial review (design challenge):
+PART 3 — DOC-DRIFT:
+Detect whether this `git diff` makes the target project's `CLAUDE.md` descriptive sections inaccurate or stale.
+
+- Only inspect these descriptive sections: `关键文件`, `设计决策`, `阶段归属`, `前置要求`, `外部依赖`.
+- 不检测 当前目标 checkbox 区; progress checkboxes are handled later by the document finishing step.
+- Output doc-drift items as `<section>: <失真描述>`.
+- DOC-DRIFT findings do **不进 PASS/FAIL** gate. They are advisory, like ADVERSARIAL findings, and are consumed later by `ohaze:finishing` `doc-finish`.
+
+PART 4 — Adversarial review (design challenge):
 This is NOT a stricter pass over PART 1/2. This is a different lens entirely. Even if the implementation is correct and clean, ask whether the chosen approach is the right one.
 
 - Challenge the chosen approach: was there a simpler, safer, or more maintainable alternative the plan rejected or didn't consider?
@@ -225,6 +239,9 @@ If FAIL, list issues by severity:
 ADVERSARIAL findings (always include if any, regardless of verdict):
 - ADVERSARIAL: <design risk / approach concern> — <file:line or "design-wide">
 
+DOC-DRIFT findings (always include; use [] if none):
+- DOC-DRIFT: <section>: <失真描述>
+
 If PASS with no ADVERSARIAL findings: one-line summary.
 If PASS with ADVERSARIAL findings: one-line summary followed by the ADVERSARIAL list.
 ```
@@ -235,7 +252,7 @@ If PASS with ADVERSARIAL findings: one-line summary followed by the ADVERSARIAL 
 
 Track retry counter starting at 0.
 
-- If reviewer returns `VERDICT: PASS`: report success to user, end skill, caller proceeds to Phase 7 (`superpowers:finishing-a-development-branch`).
+- If reviewer returns `VERDICT: PASS`: report success to user, end skill, caller proceeds to Phase 7 (`ohaze:finishing`).
 
 - If reviewer returns `VERDICT: FAIL` and retry < 3:
   1. Format the issues as a delta instruction:
@@ -257,18 +274,20 @@ Track retry counter starting at 0.
      After fixing, re-run the project test command. All tests must pass before reporting done.
      </verification_loop>
      ```
-  2. Write the fix prompt to `<worktree>/.ohaze/codex-fix-iter<N>.xml` via Write tool, then dispatch with `codex exec resume --last` (continues the same Codex thread started in Phase 4):
+  2. Read `codex_session_id` from `.ohaze/current-ship.json`. Write the fix prompt to `<worktree>/.ohaze/codex-fix-iter<N>.xml` via Write tool, then dispatch with `codex exec resume <codex_session_id>` (continues the same Codex thread started in Phase 4):
 
      ```bash
      # Foreground for retries — user is engaged, no need to background
-     codex exec resume --last \
+     codex exec resume <codex_session_id> \
        --sandbox danger-full-access \
        --cd <worktree_path> \
        < <worktree>/.ohaze/codex-fix-iter<N>.xml \
        2>&1 | tee -a <log_file>
      ```
 
-     If `codex exec resume --last` fails to find the prior thread (e.g., codex was restarted between sessions), fall back to a fresh `codex exec` with the fix prompt embedded inside a `<task>` block that references the original goal (read it from the saved prompt file or the log).
+     If `codex_session_id` is empty or missing, do not silently choose a global thread. Print and append to the Codex log: `WARNING: session id 缺失，并行 ship 下 resume 可能不精确`; only then use the fallback command `codex exec resume --last`.
+
+     If exact resume fails to find the prior thread (e.g., codex was restarted between sessions), fall back to a fresh `codex exec` with the fix prompt embedded inside a `<task>` block that references the original goal (read it from the saved prompt file or the log).
   3. Increment retry counter; update `.ohaze/current-ship.json` `retries` field.
   4. Re-run Phase 5 (review).
 
@@ -295,10 +314,17 @@ Track retry counter starting at 0.
 - Does NOT itself schedule the auto-resume — that's `/ohaze:ship`'s job (it calls `ScheduleWakeup` after this skill returns). The executor only dispatches Codex and returns; the orchestrator schedules.
 - Does NOT poll Codex synchronously. The polling pattern is: `/ohaze:ship` schedules wakeup → wakeup fires `/ohaze:ship-review` → its pre-flight checks pid → still alive re-schedules / done proceeds to Phase 5.
 
+## Resume Boundary
+
+Use `resume` only inside the same ship lifecycle: review retry and modify flows for the active `.ohaze/current-ship.json`.
+
+If a bug is found after finishing completes, start a **新 fix ship** with a new worktree, new plan, and new Codex session. Do **不 resume 旧 session** after finishing. Feed the old feature's plan, vault decisions, and relevant commits into the new ship prompt as explicit reference material instead of depending on Codex session memory.
+
 ## Failure modes and recovery
 
 - **`codex` binary not found**: report the failure, suggest `/codex:setup` if not yet run. Do not improvise an inline implementation.
 - **Background nohup exits immediately (pid no longer alive within 5s)**: tail the log file — Codex likely refused to start (auth issue, sandbox flag rejected by old codex version, prompt file unreadable). Surface the actual error.
 - **Reviewer subagent returns malformed verdict**: re-dispatch the reviewer once with stricter format guidance. If it fails again, fall back to asking user to read `git diff` and decide.
 - **Worktree state is dirty after Codex log says done**: read the log's `Notable implementation choices` and `Touched files` to confirm completion intent. The orchestrator should then commit per the Task message mapping in Phase 5.0.
-- **`codex resume --last` fails to find prior thread**: fall back to fresh `codex exec` with combined "original task + fix delta" prompt. Note this in the retry log so the reviewer knows context may have been lost.
+- **Exact `codex exec resume <codex_session_id>` fails to find prior thread**: fall back to fresh `codex exec` with combined "original task + fix delta" prompt. Note this in the retry log so the reviewer knows context may have been lost.
+- **`codex_session_id` missing**: log `WARNING: session id 缺失，并行 ship 下 resume 可能不精确`, then and only then use fallback `codex exec resume --last`.
