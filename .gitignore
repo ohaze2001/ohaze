@@ -1,4 +1,5 @@
 .ohaze/
 .worktrees/
+.claude/scheduled_tasks.lock
 .DS_Store
 *.log
