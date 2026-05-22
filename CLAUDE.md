@@ -28,7 +28,7 @@
 - **执行粒度**：整份 plan 一次性给 Codex（端到端）
 - **Codex 调用**：1.7.0 起直接 `codex exec --sandbox danger-full-access`，后台 `nohup &`；不再经 codex 插件的 codex-companion.mjs（其 task 接口硬编码 `workspace-write` 沙箱，会拦 worktree 外的写）
 - **commit 处理**：Codex 虽有 full-access 可自己 commit，但 ohaze 按约定把 commit 权保留在主线程，review 前按 plan 指定 message 统一补
-- **审查策略**：Codex 完成后 `superpowers:code-reviewer` 子 agent 自动审查
+- **审查策略**：Codex 完成后派发 `general-purpose` 子 agent 自动审查（审查 prompt 完整内联在 codex-executor/SKILL.md，含 3-PART ADVERSARIAL + DOC-DRIFT；superpowers 不提供 `code-reviewer` subagent）
 - **审查重试**：失败送回 Codex `codex exec resume <session_id>`，上限 3 次（modify 循环不计入）
 - **resume 边界**：`resume` 仅用于同一 ship 生命周期内（review retry / modify）；ship 走完 finishing 后的 bug 修复 = 新 fix ship（新 worktree/plan/codex session），不 resume 旧 session
 - **finishing**：`ohaze:finishing` skill 实现——项目类型检测（local/remote）→ 推荐收尾链 → 一键执行（不调 superpowers:finishing-a-development-branch）
@@ -43,7 +43,7 @@
 | 4a plan→prompt | Claude | ohaze (plan-to-codex-prompt skill) |
 | 4b 执行 | Codex | codex CLI（`codex exec`，非 codex 插件） |
 | 5a 补 commit | Claude | ohaze (codex-executor Phase 5.0) |
-| 5b 审查 | Claude | ohaze + superpowers:code-reviewer |
+| 5b 审查 | Claude | ohaze（general-purpose subagent + 内联审查 prompt） |
 | 6 修复重试 | Codex | codex CLI（`codex exec resume <session_id>`） |
 | 7 finishing | Claude | **ohaze（finishing skill）** |
 
@@ -63,7 +63,7 @@
 - 推 GitHub：`gh repo create muling-dev/ohaze --public --source=. --push`
 
 ## 外部依赖
-- `superpowers` plugin：brainstorming / writing-plans / using-git-worktrees / code-reviewer
+- `superpowers` plugin：brainstorming / writing-plans / using-git-worktrees（审查不依赖 superpowers，用 general-purpose subagent）
 - `codex` CLI 二进制：ship 流程直接调 `codex exec`（不经 codex 插件 / codex-companion.mjs）
 - `codex` plugin（可选）：仅 `/codex:rescue` 等 ship 之外功能用到
 - 可选 `gh`：让 `/ohaze:status` 能拉远端 PR 列表

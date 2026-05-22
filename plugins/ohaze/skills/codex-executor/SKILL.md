@@ -139,9 +139,12 @@ Codex therefore leaves uncommitted changes in the worktree. Before review, the o
    ```
 
 ### Phase 5.2: Dispatch the reviewer subagent
+
+Dispatch with `subagent_type="general-purpose"`. superpowers does NOT ship a `code-reviewer` subagent — its review mechanism is a `general-purpose` subagent fed the `requesting-code-review/code-reviewer.md` prompt template. ohaze's review prompt (the 3-PART ADVERSARIAL + DOC-DRIFT template below) is fully self-contained and does not depend on that template.
+
    ```
    Agent(
-     subagent_type="superpowers:code-reviewer",
+     subagent_type="general-purpose",
      description="Review Codex implementation against plan",
      prompt=<see review prompt template below>
    )

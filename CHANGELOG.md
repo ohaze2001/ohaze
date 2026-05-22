@@ -36,6 +36,8 @@
 
 ### Fixed
 - Codex retry/modify 从全局 `resume --last` 改为 session-id 精确 resume，修复并行 ship 下可能串会话的问题
+- 审查 subagent 派发类型从不存在的 `superpowers:code-reviewer` 改为 `general-purpose`（superpowers 不提供 code-reviewer subagent，旧代码每次靠 fallback 蒙混）
+- `ohaze:finishing` 菜单从 `AskUserQuestion`（限 4 项，5 项菜单溢出）改为纯文字编号菜单
 
 ---
 

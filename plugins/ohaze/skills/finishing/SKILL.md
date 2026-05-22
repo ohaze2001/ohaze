@@ -61,13 +61,18 @@ Before asking, print:
 - Detected `project_type`: `local` or `remote`
 - Full recommended chain, in order, so the user can see exactly what option 1 will do
 
-Use `AskUserQuestion` with exactly these five choices:
+Then print these five choices as a plain-text numbered list and ask the user to reply with a number. Do NOT use `AskUserQuestion` — it caps options at 4, and a plain-text menu is the project convention for open choices.
 
+```
+请选择收尾方式（回复数字）:
 1. 执行推荐收尾（一键到底）
 2. 继续修改
 3. 丢弃此次工作
-4. 先不处理（worktree 留着，稍后 `/ohaze:ship-finish`）
+4. 先不处理（worktree 留着，稍后 /ohaze:ship-finish）
 5. 自定义收尾方案
+```
+
+Read the user's reply, map it to the option number, and proceed.
 
 Option 4 does nothing destructive. Update `.ohaze/current-ship.json` so `state = "kept"`, then tell the user the worktree path and that `/ohaze:ship-finish` resumes the workflow.
 
