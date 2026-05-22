@@ -20,6 +20,25 @@
 
 ---
 
+## [1.9.0] — 2026-05-22
+
+**主题**：finish menu 项目类型化 + 文档漂移自动检测 + Codex session 精确 resume。
+
+### Added
+- `ohaze:finishing` skill：抽出 Phase 7 finishing，统一 finishing menu、收尾链执行、文档收尾、modify 子流程
+- Finish menu 项目类型推荐链：`local` 默认 doc-finish → commit → merge → remove-worktree；`remote` 默认 doc-finish → commit → merge → push → remove-worktree，并支持偏好回写
+- Reviewer `DOC-DRIFT` 检测：发现目标项目 `CLAUDE.md` 描述性 section 漂移，写入 `review-verdict.json` 的 `doc_drift`
+
+### Changed
+- `/ohaze:ship-review` 与 `/ohaze:ship-finish` 改为 invoke `ohaze:finishing`，不再维护内联 finishing 菜单副本
+- `/ohaze:ship` handoff 增加 `codex_session_id` 与 `project_type` 字段
+- Resume 边界文档化：finishing 后发现 bug 要开新的 fix ship，不 resume 旧 session
+
+### Fixed
+- Codex retry/modify 从全局 `resume --last` 改为 session-id 精确 resume，修复并行 ship 下可能串会话的问题
+
+---
+
 ## [1.8.0] — 2026-05-18
 
 **主题**：Auto-resume + Real-ship hardening — 不需要用户手动接 Phase 5；finishing 支持纯本地仓。
@@ -108,7 +127,8 @@
 
 ---
 
-[Unreleased]: https://github.com/muling-dev/ohaze/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/muling-dev/ohaze/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/muling-dev/ohaze/releases/tag/v1.9.0
 [1.8.0]: https://github.com/muling-dev/ohaze/releases/tag/v1.8.0
 [1.7.0]: https://github.com/muling-dev/ohaze/releases/tag/v1.7.0
 [1.6.0]: https://github.com/muling-dev/ohaze/releases/tag/v1.6.0
