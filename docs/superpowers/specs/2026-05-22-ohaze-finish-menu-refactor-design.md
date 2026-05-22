@@ -8,9 +8,9 @@
 
 1. **Codex resume 不精确** — `codex-executor` 的 retry / modify 子流程用 `codex exec resume --last`。`--last` 是全局「最近一次 session」，并行跑两个 ship 时会接错会话、改错 worktree。这是正确性 bug。
 2. **文档漂移无人管** — 本 session 就发现 ohaze `CLAUDE.md` 对 codex 调用模型的描述落后代码 3 个版本（1.7→1.8），靠人肉偶然发现。ship 完一个功能后没有任何机制检测「这次改动是否让设计文档失真」。
-3. **finish menu 不认项目类型** — 当前 6 选项菜单是固定的并列 git 动作，不区分「纯本地 / 远程仓库 / 远程+部署」项目，且缺「合并+推送」这一最常用组合；逐项选择繁琐。
+3. **finish menu 不认项目类型** — 当前 6 选项菜单是固定的并列 git 动作，不区分「纯本地 / 远程仓库」项目，且缺「合并+推送」这一最常用组合；逐项选择繁琐。
 
-本期（第一期/核心）解决以上三点 + 4 个连带的架构问题（P1–P4）。第二期（vault 智能提取习惯、自定义收尾的复杂解析）不在本 spec 范围。
+本期（第一期/核心）解决以上三点 + 4 个连带的架构问题（P1–P4）。第二期（vault 智能提取习惯、自定义收尾的复杂解析、线上部署相关）不在本 spec 范围。
 
 ## 范围
 
@@ -18,7 +18,7 @@
 
 - R1 Codex session id 精确捕获与 resume
 - R2 文档漂移自动检测（advisory）+ finishing 阶段半自动修复
-- R3 finish menu 重构为「项目类型检测 → 推荐收尾链 → 一键执行」
+- R3 finish menu 重构为「项目类型检测 → 推荐收尾链 → 一键执行」（项目类型仅分 `local` / `remote` 两类）
 - R6 「保留 worktree」从菜单平级选项降级为不显眼的 escape hatch
 - R7 「继续修改」modify 子流程 — 确认现状满足，本期不改
 - R8 resume 边界写进 ohaze 文档
@@ -26,10 +26,10 @@
 
 ### 明确不在本期范围
 
+- **线上部署相关，整体推迟到下一次改造** — 包括项目类型的 `remote-deploy` 细分、部署平台检测、deploy 确认点、ohaze 执行部署命令。原因：是否让 ohaze 接管部署、以及部署环的交互形态尚未对齐，留待专门一次改造处理。本期 finishing 只认 `local` / `remote` 两类。
 - vault 智能提取用户收尾习惯（本期仅做偏好文件 + 内置默认 + 菜单选择回写）
 - 自定义收尾方案的复杂自由文本解析（本期做基础版：见 A7）
 - `/ohaze:status` 的 codex 孤儿进程 reconcile 检测（单独 backlog）
-- ohaze 实际执行部署命令（本期 deploy 环只检测 + 提示 + 留确认点，见 A8）
 
 ## 需求详述
 
@@ -50,11 +50,10 @@
 
 ### R3 — finish menu 重构
 
-- finishing 入口先做**项目类型检测**（见 A6），归为三类之一：`local`（无 remote）/ `remote`（有 remote 无部署）/ `remote-deploy`（有 remote 且检测到部署配置）。
+- finishing 入口先做**项目类型检测**（见 A6），归为两类之一：`local`（无 remote）/ `remote`（有 remote）。
 - 按类型从**偏好文件**（见 A5）取「推荐收尾链」；偏好文件无对应条目则用内置默认链：
   - `local`：commit → 合并 main → 删 worktree
   - `remote`：commit → 合并 main → push → 删 worktree
-  - `remote-deploy`：commit → 合并 main → push → 删 worktree（+ deploy 确认点，见 A8）
 - 新菜单（取代当前固定 6 项）：
   1. 执行推荐收尾（一键到底，链式执行，不再逐环 yes/no）
   2. 继续修改（进 modify 子流程）
@@ -128,9 +127,8 @@
 - 结构：
   ```json
   {
-    "local":         ["doc-finish", "commit", "merge", "remove-worktree"],
-    "remote":        ["doc-finish", "commit", "merge", "push", "remove-worktree"],
-    "remote-deploy": ["doc-finish", "commit", "merge", "push", "remove-worktree"]
+    "local":  ["doc-finish", "commit", "merge", "remove-worktree"],
+    "remote": ["doc-finish", "commit", "merge", "push", "remove-worktree"]
   }
   ```
 - 文件不存在 / 对应类型条目缺失 → 用内置默认链（同上结构）。
@@ -142,24 +140,15 @@
 在 `ohaze:finishing` 入口执行，基于**主仓**（非 worktree）：
 
 - `git remote` 为空 → `local`
-- `git remote` 非空，且主仓根目录检测到部署配置（`vercel.json` / `.vercel/` / `netlify.toml` / `wrangler.toml` / `.github/workflows/` 下文件名含 `deploy` 的 workflow）→ `remote-deploy`
-- `git remote` 非空且无部署配置 → `remote`
+- `git remote` 非空 → `remote`
 
 检测结果同时写入 `current-ship.json`（字段 `project_type`），供 `/ohaze:status` 等复用。
+
+（线上部署项目的进一步细分留待下一次改造，本期不检测部署配置。）
 
 ### A7 — 自定义收尾方案（基础版）
 
 本期不做自由文本解析。选「5. 自定义收尾方案」时，给用户一组**收尾动作积木**（`doc-finish` / `commit` / `merge` / `push` / `pr` / `remove-worktree` / `keep-worktree`）让其按序勾选组合成一条链，然后按 A3 的步骤化执行契约跑。组合结果回写偏好文件。
-
-### A8 — deploy 环本期范围
-
-`remote-deploy` 类项目，推荐链跑完 `push` 后，**单独**给一个 deploy 确认点（不进一键链）：
-
-- 本期 ohaze **不执行**实际部署命令。
-- 仅打印提示：检测到的部署平台 + 「push 到 `<branch>` 可能已触发线上自动部署，请到 `<平台>` 确认」。
-- 用户可选「我知道了 / 跳过」。实际部署留给平台自动化或用户手动。
-
-（第二期再评估 ohaze 是否接管实际 deploy。此决策需在用户 review 本 spec 时确认。）
 
 ## 组件与数据流
 
@@ -178,11 +167,11 @@ ship-review.md ─┐
 ship-finish.md ─┘
                      │
 ohaze:finishing
-  ├─ A6 项目类型检测 → project_type
+  ├─ A6 项目类型检测 → project_type (local / remote)
   ├─ A5 读 ~/.ohaze/finish-prefs.json → 推荐链
   ├─ 展示新菜单（1 推荐 / 2 改 / 3 弃 / 4 不处理 / 5 自定义）
   ├─ 选 1 或 5 → 链式执行（A3 失败即停）：
-  │     doc-finish(A2) → commit → merge → push → [deploy 确认 A8] → remove-worktree
+  │     doc-finish(A2) → commit → merge → push → remove-worktree
   ├─ A4 时序：Write ship-result.json → rm handoff → 删 worktree
   └─ 回写偏好文件
 ```
@@ -195,7 +184,7 @@ ohaze:finishing
 | `plugins/ohaze/skills/codex-executor/SKILL.md` | reviewer prompt 加 DOC-DRIFT PART；retry/modify resume 改用 session id；review-verdict.json 加 `doc_drift`；写入 R8 resume 边界说明 |
 | `plugins/ohaze/commands/ship-review.md` | 移除内联 finishing 菜单，改为 invoke `ohaze:finishing` |
 | `plugins/ohaze/commands/ship-finish.md` | 移除内联 finishing 菜单，改为 invoke `ohaze:finishing` |
-| `plugins/ohaze/skills/finishing/SKILL.md` | **新建** — Phase 7 finishing 全部逻辑（A1–A8） |
+| `plugins/ohaze/skills/finishing/SKILL.md` | **新建** — Phase 7 finishing 全部逻辑（A1–A7） |
 | `plugins/ohaze/CLAUDE.md` | 「设计决策」加 R8 resume 边界摘要 + finishing 新形态描述；同步关键文件表 |
 | `CHANGELOG.md` | 新增 `[1.9.0]` 条目 |
 | `plugins/ohaze/.claude-plugin/plugin.json` | `version` → `1.9.0` |
