@@ -73,7 +73,7 @@
 - 历史叙事（V1.0 / V1.1 / V1.5）保留，从 **1.6.0** 起严格 [SemVer 2.0.0](https://semver.org/lang/zh-CN/)
 - 全局规则见 `~/CLAUDE.md` 的 "版本号规范（SemVer 2.0.0）" 段
 - 完整变更日志：[`CHANGELOG.md`](CHANGELOG.md)
-- 当前版本：**1.9.0**（`plugins/ohaze/.claude-plugin/plugin.json`）
+- 当前版本：**1.9.1**（`plugins/ohaze/.claude-plugin/plugin.json`）
 
 ## 当前目标
 - [x] V1.0 骨架（5 个核心文件）
@@ -86,5 +86,6 @@
 - [x] **1.7.0**：Plan 契约化 + ADVERSARIAL review + sandbox `danger-full-access`
 - [x] **1.8.0**：Auto-resume（ScheduleWakeup）+ 本地 merge 选项 + real-ship hardening
 - [x] **1.9.0**：finish menu 项目类型化 + 文档漂移自动检测 + Codex session 精确 resume + finishing skill 抽取
-- [ ] 1.8.0 推 GitHub + 打 tag `v1.6.0 / v1.7.0 / v1.8.0`
+- [x] **1.9.1**：codex 插件彻底弃用 + 修正错误的 finishing 菜单改动 + vault-adapter 死链修复
+- [ ] 补打历史 tag `v1.6.0 / v1.7.0 / v1.8.0 / v1.9.0`
 - [ ] **2.0.0**：tool-router（按任务复杂度路由 Codex / Claude / Gemini / DeepSeek）
