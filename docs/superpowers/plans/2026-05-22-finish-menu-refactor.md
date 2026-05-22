@@ -21,7 +21,7 @@
 | `plugins/ohaze/commands/ship-finish.md` | 从暂停态恢复 + 接入 finishing | 改：移除内联 finishing，改 invoke |
 | `plugins/ohaze/skills/codex-executor/SKILL.md` | Codex 派发 + review + retry/modify | 改：resume 用 session id + DOC-DRIFT PART + resume 边界 |
 | `plugins/ohaze/commands/ship.md` | ship 主入口 | 改：Phase 4 捕获 codex_session_id + handoff 字段 |
-| `plugins/ohaze/CLAUDE.md` | 项目说明 | 改：关键文件表 / 设计决策 / 阶段归属 / 版本 |
+| `CLAUDE.md` | 项目说明（仓库根） | 改：关键文件表 / 设计决策 / 阶段归属 / 版本 |
 | `CHANGELOG.md` | 变更日志 | 改：新增 `[1.9.0]` |
 | `plugins/ohaze/.claude-plugin/plugin.json` | plugin manifest | 改：`version` → `1.9.0` |
 
@@ -200,12 +200,12 @@
 ## Task 5: 文档与版本收尾
 
 **Files:**
-- Modify: `plugins/ohaze/CLAUDE.md`
+- Modify: `CLAUDE.md`（仓库根，**不是** `plugins/ohaze/CLAUDE.md`）
 - Modify: `CHANGELOG.md`
 - Modify: `plugins/ohaze/.claude-plugin/plugin.json`
 
 **Behavior Contract:**
-- **`plugins/ohaze/CLAUDE.md`**：
+- **`CLAUDE.md`（仓库根）**：
   - 「关键文件」表：新增一行 `plugins/ohaze/skills/finishing/SKILL.md`（作用：Phase 7 finishing —— 项目类型推荐链 + 文档收尾 + modify 子流程）；更新 `ship-review.md` / `ship-finish.md` 行的描述（finishing 已抽出，改为 invoke `ohaze:finishing`）；`codex-executor` 行描述补「DOC-DRIFT 检测」。
   - 「设计决策」：新增「resume 边界」条目（与 Task 3 改动 c 一致的摘要）；新增 / 更新「finishing」条目为新形态（项目类型检测 → 推荐收尾链 → 一键执行，菜单 5 项）。
   - 「阶段归属」表：第 7 行 finishing 的「来源」更新为 `ohaze（finishing skill）`；第 6 行修复重试的 `codex exec resume --last` 更新为 `resume <session_id>`。
