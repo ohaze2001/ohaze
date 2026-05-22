@@ -108,6 +108,10 @@ PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
 
    The skill dispatches `codex exec --sandbox danger-full-access` in the background (via Claude Code's `Bash(run_in_background)`) and records `codex_pid_file` / `codex_log_file` paths in the handoff.
 
+8. Capture `codex_session_id` for precise resume. After `codex exec` starts, parse a UUID-form session id from Codex startup output or, if the current Codex version does not print one, look it up from Codex's session records for the just-started run. Store the identifier that can be passed to `codex exec resume <codex_session_id>`.
+
+   If the session id cannot be captured confidently, set `codex_session_id` to JSON `null`, add one visible note to the dispatch/handoff flow, and continue the ship. Do not block Phase 4 just because session id capture failed; later retry/modify flows will warn and fall back.
+
 ## Auto-resume (do NOT just stop)
 
 After Phase 4 dispatch, do NOT end the turn silently. Schedule a wakeup so you self-resume into `/ohaze:ship-review` without the user having to remember.
@@ -176,12 +180,16 @@ Handoff file shape:
   "retries": 0,
   "codex_job_id": "<ohaze-<unix_ts>-<pid> generated in codex-executor Phase 4>",
   "codex_run_id": "<same as codex_job_id (vault-adapter back-compat)>",
+  "codex_session_id": "<UUID usable by codex exec resume, or null>",
   "codex_pid_file": "<worktree>/.ohaze/codex-<job_id>.pid",
   "codex_log_file": "<worktree>/.ohaze/codex-<job_id>.log",
+  "project_type": null,
   "state": "running",
   "linked_todo": "<exact todo text from Step A, or null>"
 }
 ```
+
+`project_type` starts as `null`; `ohaze:finishing` detects `local` / `remote` in Phase 7 and writes it back to this handoff. `codex_session_id` starts as the captured UUID or `null` if capture failed.
 
 `.ohaze/` should be added to `.gitignore` (do this once via the worktree skill or here if missing).
 
