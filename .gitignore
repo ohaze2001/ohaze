@@ -1,3 +1,4 @@
 .ohaze/
+.worktrees/
 .DS_Store
 *.log
