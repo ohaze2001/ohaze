@@ -10,7 +10,18 @@
 
 ## [Unreleased]
 
-待规划：**2.0.0** — tool-router（按任务复杂度自动路由 Codex / Claude / Gemini / DeepSeek）。
+### Added
+
+### Changed
+
+### Fixed
+
+### Removed
+
+### Planned
+- **2.0.0** — tool-router（按任务复杂度自动路由 Codex / Claude / Gemini / DeepSeek）
+
+### Backlog
 
 ---
 
