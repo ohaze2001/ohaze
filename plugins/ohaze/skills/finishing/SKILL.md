@@ -225,14 +225,17 @@ Discard:
 {"action":"discard","branch":"<branch>"}
 ```
 
-`remove-worktree` removes the linked worktree and branch only after the terminal result order above has completed:
+`remove-worktree` removes the linked worktree and branch only after the terminal result order above has completed.
+
+**Before removing, `cd "$main_repo_path"` first.** The session has almost certainly `cd`'d into the worktree (`ship.md` Phase 2 and `ship-finish.md` both do). Removing a worktree while the session's shell cwd is still inside it leaves the cwd pointing at a deleted directory; the next hook of any kind (`UserPromptSubmit` / `Stop` / `SessionEnd`) then gets spawned from that dead cwd and Claude Code surfaces a hook failure (`posix_spawn '/bin/sh' ENOENT`, or a `getcwd: cannot access parent directories` error). The spawn fails *before* the hook script runs, so no amount of hook-side guarding can recover it — the only fix is to never leave the session cwd inside a to-be-deleted worktree.
 
 ```bash
-git -C "$main_repo_path" worktree remove <worktree_path>
-git -C "$main_repo_path" branch -D <branch>
+cd "$main_repo_path"
+git worktree remove <worktree_path>
+git branch -D <branch>
 ```
 
-For discard, confirm with the user first, then use `worktree remove --force`.
+For discard, confirm with the user first, then (still after `cd "$main_repo_path"`) use `git worktree remove --force <worktree_path>`.
 
 `keep-worktree` leaves the worktree in place and reports its path.
 

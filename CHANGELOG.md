@@ -25,6 +25,15 @@
 
 ---
 
+## [1.9.2] — 2026-05-29
+
+**主题**：修复 finishing 删 worktree 后 session cwd 悬空导致 hook 调用失败。
+
+### Fixed
+- `finishing/SKILL.md` `remove-worktree`：删 worktree 前先 `cd "$main_repo_path"` 把 session cwd 收回主仓。此前 `ship.md` Phase 2 / `ship-finish.md` 会 `cd` 进 worktree，finishing 用 `git -C "$main_repo_path" worktree remove` 删除时 shell 仍站在 worktree 内 → cwd 指向已删目录 → 之后任意 hook（`UserPromptSubmit` / `Stop` / `SessionEnd`）从死 cwd spawn，Claude Code 报 `posix_spawn '/bin/sh' ENOENT` / `getcwd: cannot access parent directories` 错误。spawn 在 hook 脚本执行前就失败，hook 侧无法兜底，唯一修复点是不让 cwd 留在待删 worktree 内。discard 分支同样先 cd 再 `git worktree remove --force`（这两天 vault refactor 高密度连续 ship 时高概率复现，根因实为 Claude Code hook spawn 前不校验 cwd 的上游 bug [#50960](https://github.com/anthropics/claude-code/issues/50960)，ohaze 侧通过收回 cwd 规避触发）
+
+---
+
 ## [1.9.1] — 2026-05-22
 
 **主题**：codex 插件彻底弃用 + 修正 1.9.0 里错误的 finishing 菜单改动 + vault-adapter 死链修复。
