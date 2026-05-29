@@ -4,7 +4,7 @@
 > Agent 行为指导看 CLAUDE.md. 项目自描述看 README.md.
 
 ## 当前主线
-v1.9.1: TBD (vault dream 主维护)
+v2.0.0: TBD (vault dream 主维护)
 
 - [ ] TBD (vault dream 主维护) (2026-05-29)
 

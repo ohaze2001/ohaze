@@ -1,5 +1,5 @@
 # ohaze
-> 我自己的 Claude Code 工作流插件：superpowers 上游 brainstorm/plan + Codex 中段执行 + Claude 审查 + ohaze 自己的 5 选项 finishing
+> 个人 Claude Code 工作流插件：让 superpowers 负责思考、Codex 负责执行、Claude 负责审查与收尾。
 
 > README: [./README.md](./README.md)
 > ROADMAP: [./ROADMAP.md](./ROADMAP.md)
