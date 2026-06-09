@@ -19,6 +19,7 @@ v2.0.0 重构：零运行时外部 skill 依赖 + vault 流程层剥离 + 修核
 ## Backlog
 - 集成验证 dogfood（v2 装机后端到端跑一个 throwaway ship 冒烟验证）
 - 定期 diff superpowers v5.1.0 上游 brainstorming / using-git-worktrees SKILL.md（基线漂移监控）
+- 持久化 Codex 输出（`codex-executor` Phase 4 `tee` `--json` 到 `<worktree>/.ohaze/codex-output.jsonl`），使 doc-finish 真相源跨 session 可用，消除 F9 的 fallback 降级
 
 ## Bug
 - （v2.0.0 发版前清空；后续发现登记于此）

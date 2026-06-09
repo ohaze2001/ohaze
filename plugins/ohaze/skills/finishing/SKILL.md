@@ -133,7 +133,11 @@ Hard constraint: **merge 成功 push 失败禁止删 worktree**. If `merge` succ
 
 `doc-finish` is the document finishing step and it must run before `commit`. It combines progress-contract updates and drift repair into one preview patch before any docs commit is created.
 
-**真相源** = `spec_path` + `plan_path` + Codex's final report (read via `BashOutput <codex_bg_id>` from the `--json` stream, or from the saved `codex-prompt.xml` log) + `git diff <base_ref>..HEAD`. This is the ship scenario — Codex did the work outside the conversation, so we do NOT use neat's "对话为真相源" model.
+**真相源** = `spec_path` + `plan_path` + Codex's final report (read via `BashOutput <codex_bg_id>` from the live `--json` stream) + `git diff <base_ref>..HEAD`. This is the ship scenario — Codex did the work outside the conversation, so we do NOT use neat's "对话为真相源" model.
+
+**`codex_bg_id` fallback**: if `BashOutput` returns "no such task" (background task expired — happens cross-session after `/exit`, or after multiple resume cycles where v2 architecture does not persist Codex output to disk), doc-finish degrades gracefully: proceed with `spec_path + plan_path + git diff` only and emit one short warning to the user — `WARNING: Codex report unavailable (codex_bg_id stale); doc-finish proceeding without it. CHANGELOG entries / drift detection may miss Codex-side context.` Do NOT read `codex-prompt.xml` as a fallback — that file is the INPUT prompt fed into Codex, not Codex's output, so reading it gives no information about what Codex actually did.
+
+> Future improvement (v2.1 candidate, not in v2.0): `codex-executor` Phase 4 could `tee` the `--json` stream to `<worktree>/.ohaze/codex-output.jsonl` to make Codex's report persistent across sessions, removing this degradation. Logged in `ROADMAP.md ## Backlog`.
 
 It handles **four classes** of document change (internalized from `neat`'s four-piece routing):
 
