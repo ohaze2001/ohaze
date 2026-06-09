@@ -1,206 +1,218 @@
 ---
-description: End-to-end feature shipping. Brainstorm → plan → Codex execute → (later /ohaze:ship-review for review + finishing).
-argument-hint: "[feature description]"
-allowed-tools: Bash, Read, Write, Edit, Skill, Agent, AskUserQuestion, ScheduleWakeup
+description: End-to-end feature shipping. Brainstorm → worktree+spec → plan → Codex execute (run_in_background; harness re-invokes into /ohaze:ship-review on completion). v2.0.0 — zero runtime external skill deps, no vault, no ScheduleWakeup.
+argument-hint: "<feature description> [--project <abs-path>]"
+allowed-tools: Bash, Read, Write, Edit, Skill, Agent, AskUserQuestion
 ---
 
-Orchestrate the ohaze workflow for the user's request. Treat the user's argument as the feature description:
+Orchestrate the ohaze v2 ship workflow for the user's request.
 
 `$ARGUMENTS`
 
-If `$ARGUMENTS` is empty, ask the user what they want to ship before proceeding.
+Treat `$ARGUMENTS` as the feature description, plus an optional `--project <abs-path>` flag that **explicitly** names the target project. If `$ARGUMENTS` is empty, ask the user what they want to ship before proceeding.
+
+> **Why explicit project path:** Claude Code's harness can reset the shell cwd between turns (especially after background tasks, worktree teardowns, and re-invokes). Detecting the project via `pwd` / `git rev-parse --show-toplevel` is unreliable mid-flow — dogfood proved it. Therefore the project path is captured **once at Pre-flight** from the `--project` flag (or, on first run only, from a confirmed `pwd`), then stored in the handoff and used everywhere downstream. **Never re-detect with `pwd` later in the flow.**
 
 ## Pre-flight
 
-1. Verify prerequisites are present:
-   ```bash
-   ls ~/.claude/plugins/cache/claude-plugins-official/superpowers/*/skills/brainstorming/SKILL.md
-   command -v codex
-   ```
-   - If superpowers is missing, stop and tell the user to install it: `/plugin install superpowers@claude-plugins-official`.
-   - If the `codex` CLI binary is missing, stop and tell the user to install it (`npm install -g @openai/codex`) and authenticate (`codex login`).
-
-   The `codex` plugin is NOT a dependency — the ship flow calls the `codex` CLI binary directly.
-
-2. Detect current project: `pwd` and `git rev-parse --show-toplevel`. Confirm with user this is the project they want to ship in.
-
-## Vault Context (pre-brainstorm read)
-
-Before brainstorming, silently load vault context to inform the session. Do NOT summarize this to the user unless it reveals a blocker.
+### 1. Hard dependency: codex CLI
 
 ```bash
-PROJECT_NAME=$(basename $(git rev-parse --show-toplevel))
-VAULT="$HOME/Brain"
-PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
+command -v codex
 ```
 
-3. Read vault project state (best-effort — skip silently if files don't exist):
-   - `${PROJ_DIR}/README.md` — current stage / next / blockers
-   - `${VAULT}/99_System/Logs/decision-patterns.md` — user's implicit preferences
-   - The 3 most recent files in `${PROJ_DIR}/decisions/` — past feature decisions
+If missing, stop and tell the user to install it (`npm install -g @openai/codex`) and authenticate (`codex login`). The `codex` plugin is NOT a dependency — ship calls the `codex` CLI binary directly.
 
-3a. **Cross-project related reads (the knowledge graph edges)**:
+### 2. Resolve `main_repo_path` (explicit, not detected)
 
-   Parse the `related` field from the current project's README.md frontmatter:
-   ```bash
-   # frontmatter has: related: [proj1, proj2]  or  related: []
-   RELATED=$(awk '/^---$/{f++;next} f==1 && /^related:/{
-     sub(/^related: *\[/,""); sub(/\] *$/,""); gsub(/,/," "); gsub(/"/,"");
-     print; exit
-   }' "${PROJ_DIR}/README.md" 2>/dev/null)
-   ```
+- If `--project <abs-path>` was passed in `$ARGUMENTS`: use that absolute path as `main_repo_path`. Verify it exists and contains a `.git` (or is a git worktree).
+- Otherwise: confirm with the user via `AskUserQuestion`:
+  > "未指定 --project。当前 pwd 是 `<pwd>`,作为本次 ship 的目标项目对吗?" (Yes / No / 让我重输)
+  - If yes, `main_repo_path = $(git rev-parse --show-toplevel)` at this moment.
+  - If no, stop and ask the user to re-invoke with `--project <abs-path>`.
 
-   For each name in `${RELATED}`, read `${VAULT}/20_Projects/${name}/README.md` (best-effort). Cap at 5 related projects to avoid context bloat; if there are more, take the first 5.
+Store `main_repo_path` in memory now — it goes into the handoff in step 8.
 
-   Use these related READMEs to:
-   - Check for shared contracts / public APIs that the ship target might break
-   - Detect duplicate-effort risk (a related project already solved this — propose reuse)
-   - Surface coupling concerns the user might have forgotten
+### 3. Branch safety check
 
-   In brainstorming, flag any of these explicitly if relevant:
-   > "注意: related 项目 `<name>` 的 stage 是 `<stage>`, next 是 `<next>` — 这次改动会影响它吗?"
+Run inside `main_repo_path`:
 
-   If `related: []` (empty) or field missing, skip silently. Don't fabricate edges.
+```bash
+git -C "$main_repo_path" branch --show-current
+git -C "$main_repo_path" status --porcelain
+```
 
-   Combined use of all context above:
-   - Anchor brainstorming around the project's actual current state (not just the user's prompt)
-   - Avoid proposing approaches that conflict with `decision-patterns.md`
-   - Notice if the requested feature overlaps with a recent decision
-   - Catch cross-project break risks before they ship
+- If the working tree is dirty with changes **not** related to this ship (any non-empty `status --porcelain` output), stop and report to the user. Do not proceed — this prevents brainstorming on a workspace that may belong to a parallel session.
+- The current branch matters less here (ship will create its own feature branch in Phase 2), but mention it in the report if not on the project's default branch.
 
-## Phase 1 — Brainstorm (superpowers)
+### 4. Four-piece documentation completeness (内化 md-init)
 
-3. Invoke the `superpowers:brainstorming` skill.
-   - It will lead the user through clarifying questions, design proposals, and write a spec to `docs/superpowers/specs/<date>-<topic>-design.md`.
-   - DO NOT bypass any user-approval gates inside brainstorming.
-   - Wait until the spec is committed and the user explicitly approves it.
-   - **CRITICAL — Override brainstorming's terminal state:** brainstorming's last instruction says "invoke writing-plans skill" as the next step. DO NOT do that yet. Phase 2 (worktree) MUST run before writing-plans, otherwise Codex will write code on the wrong branch. After brainstorming finishes its spec self-review and the user approves the spec, proceed to Phase 2 explicitly.
+Detect project type from the manifest, then verify the four-piece set exists at `main_repo_path`:
 
-## Phase 2 — Worktree (superpowers) — DO NOT SKIP
+| Project type | Required files |
+|---|---|
+| 发行产品 (has manifest like package.json/Cargo.toml/plugin.json + intended for external consumption) | `CLAUDE.md` + `README.md` + `ROADMAP.md` + `CHANGELOG.md` |
+| 工作流项目 (internal entry, no external manifest) | `CLAUDE.md` only |
+| 入口项目 (top-level planning) | not enforced |
 
-4. Invoke the `superpowers:using-git-worktrees` skill.
-   - This step is **mandatory** even though brainstorming may have implied "go straight to writing-plans". Without this step the implementation lands on whatever branch the user happened to be on (often `main`), defeating the isolation guarantee.
-   - Branch name: derive from the spec filename (e.g. spec `2026-05-08-login-page-design.md` → branch `feat/login-page`).
-   - Capture the worktree path and base branch (typically `main`); these are needed in Phase 4 and Phase 5.
-   - After the worktree is created and the clean test baseline passes, **`cd` into the worktree** before invoking writing-plans, so the plan and all subsequent work happens inside the isolated worktree.
+**Only act if files are missing.** If all required files exist, skip silently — completeness checks should not interrupt the auto flow.
+
+If any required file is missing:
+1. Ask the user once via `AskUserQuestion` which project type this is (auto-detect a best guess from the manifest first).
+2. For each missing file, scaffold a minimal valid stub (per the four-piece contract in the global CLAUDE.md). Commit the scaffold on the **main** branch as `docs: scaffold 四件套 for ohaze ship pre-flight` before proceeding.
+
+The logic is internalized here — do NOT invoke any external `md-init` skill/command. This keeps ohaze self-contained.
+
+## Phase 1 — Brainstorm (text-only, no file write)
+
+Invoke `ohaze:brainstorming` (the self-hosted fork). Pass the feature description as the topic.
+
+- Runs **inside `main_repo_path`** (main branch, no worktree yet). The fork is text-only — it does NOT write to `docs/superpowers/specs/` and does NOT invoke writing-plans.
+- The fork's terminal state is "design approved". Wait for it.
+- Capture the **approved design content** from the conversation — you will write it to a spec file in Phase 2 after the worktree exists.
+- Also capture a short **feature slug** (kebab-case, ≤ 4 words, e.g. `2fa-login`, `accordion-ui`, `v2-refactor`). This becomes both the branch name suffix and the spec filename suffix. You may derive it from `$ARGUMENTS` or ask the user once if ambiguous.
+
+## Phase 2 — Worktree + write spec (worktree-first; spec lands on feat branch, main stays clean)
+
+### 2a. Create the worktree
+
+Invoke `ohaze:using-git-worktrees` (the self-hosted fork). Pass:
+
+- Working dir: `main_repo_path`
+- Desired branch name: `feat/<slug>` (`fix/<slug>` if the feature is clearly a regression fix; `hotfix/<slug>` only for production hotfixes — match the global git policy in `~/CLAUDE.md`).
+- Capture `worktree_path` and `main_repo_path` (the fork records `main_repo_path` automatically; you already have it from Pre-flight — assert they match).
+
+After the fork returns, `cd` into `worktree_path` for the rest of the ship.
+
+### 2b. Write the spec file inside the worktree, then commit on the feat branch
+
+- Spec path: `docs/superpowers/specs/<YYYY-MM-DD>-<slug>-design.md` (use the same slug as the branch).
+- Write the approved design from Phase 1, formatted as a normal spec doc.
+- Commit on the feature branch:
+
+  ```bash
+  git -C "$worktree_path" add docs/superpowers/specs/<file>
+  git -C "$worktree_path" commit -m "docs(spec): <slug> 设计"
+  ```
+
+- `main` is never touched in this Phase — that's the entire point of worktree-first.
+
+Capture `spec_path` (absolute, inside worktree) for the handoff.
 
 ## Phase 3 — Plan (ohaze)
 
-5. Invoke the `ohaze:writing-plans` skill.
-   - It saves a **guidance plan** (behavior contracts + acceptance criteria, no prescriptive code bodies) to `docs/superpowers/plans/<date>-<feature>.md`.
-   - Capture the absolute plan file path.
-   - The skill already presents an ohaze-specific 'go' prompt at the end — no need to override anything.
-   - When the user replies 'go', proceed directly to Phase 4. Do NOT invoke `superpowers:subagent-driven-development` or `superpowers:executing-plans` — those execution models are explicitly out of the ohaze workflow.
-   - **Why not `superpowers:writing-plans`?** Upstream writing-plans produces fully-prescriptive plans (complete function bodies in every step), which reduces Codex to a typist. `ohaze:writing-plans` is a contract-form fork that preserves the architectural rigor (Scope Check, File Structure, TDD rhythm, Self-Review) but leaves implementation autonomy to Codex.
+Invoke `ohaze:writing-plans`. It saves a **guidance plan** (behavior contracts + acceptance criteria, no prescriptive code bodies) to `docs/superpowers/plans/<date>-<feature>.md` inside the worktree.
 
-## Phase 4 — Hand off to Codex (ohaze)
+- Capture `plan_path` (absolute, inside worktree).
+- The skill presents an ohaze-specific 'go' prompt at the end. Wait for the user's 'go'.
+- DO NOT invoke `superpowers:subagent-driven-development` or `superpowers:executing-plans` — those execution models are explicitly out of the ohaze workflow.
 
-6. Invoke the `ohaze:plan-to-codex-prompt` skill with:
-   - `plan_path`: the path captured in step 5
-   - `project_test_command`: detect from project files (`package.json` → `npm test`, `Cargo.toml` → `cargo test`, `pyproject.toml` → `pytest`, etc.). If unclear, ask user.
+## Phase 4 — Hand off to Codex (run_in_background, no nohup, no ScheduleWakeup)
 
-   The skill returns a single XML prompt string. Capture it.
+### 4a. Translate plan → XML prompt
 
-7. Invoke the `ohaze:codex-executor` skill with:
-   - `codex_prompt`: the XML from step 6
-   - `plan_path`: same as step 5
-   - `base_ref`: base branch from step 4 (typically `main`)
-   - `mode`: `--background` (V1 default)
+Invoke `ohaze:plan-to-codex-prompt` with:
 
-   The skill dispatches `codex exec --sandbox danger-full-access` in the background (via Claude Code's `Bash(run_in_background)`) and records `codex_pid_file` / `codex_log_file` paths in the handoff.
+- `plan_path`: from Phase 3
+- `project_test_command`: detect from the project (`package.json` → `npm test`, `Cargo.toml` → `cargo test`, `pyproject.toml` → `pytest`, etc.). If none exists (e.g., this is a Markdown-only plugin), the per-Task `Acceptance Criteria` in the plan are the verification mechanism — pass a placeholder that tells Codex this, or ask the user.
 
-8. Capture `codex_session_id` for precise resume. After `codex exec` starts, parse a UUID-form session id from Codex startup output or, if the current Codex version does not print one, look it up from Codex's session records for the just-started run. Store the identifier that can be passed to `codex exec resume <codex_session_id>`.
+The skill returns a single XML prompt string. Capture it.
 
-   If the session id cannot be captured confidently, set `codex_session_id` to JSON `null`, add one visible note to the dispatch/handoff flow, and continue the ship. Do not block Phase 4 just because session id capture failed; later retry/modify flows will warn and fall back.
+### 4b. Dispatch via `ohaze:codex-executor`
 
-## Auto-resume (do NOT just stop)
+Invoke `ohaze:codex-executor` with:
 
-After Phase 4 dispatch, do NOT end the turn silently. Schedule a wakeup so you self-resume into `/ohaze:ship-review` without the user having to remember.
+- `codex_prompt`: the XML from 4a
+- `plan_path`: same as Phase 3
+- `spec_path`: from Phase 2b
+- `base_ref`: the parent branch (typically `main`)
+- `worktree_path`, `main_repo_path`: from Phase 2
+- `project_test_command`: same as 4a
 
-1. Call `ScheduleWakeup`:
-   - `delaySeconds: 600` (10 min covers median Codex runs; smaller plans wake into an immediate Phase 5, larger plans wake into "still running" and re-schedule)
-   - `reason: "watching codex run for ship <feature>"`
-   - `prompt: "/ohaze:ship-review"` — fires the review command on wakeup; its pre-flight handles the "still running → re-schedule" loop
+The executor:
+1. Writes the prompt to `<worktree>/.ohaze/codex-prompt.xml` (Write tool, for shell-quoting safety).
+2. Dispatches `codex exec --sandbox danger-full-access --skip-git-repo-check --cd <worktree> --json < <prompt>` via `Bash(run_in_background: true)`. **No `nohup`, no `&`, no `> log 2>&1`.**
+3. Captures `thread_id` (from the first `--json` `thread.started` event) and `codex_bg_id` (the background task id returned by the harness).
+4. Persists those to `.ohaze/current-ship.json`.
 
-2. Tell the user, then end the turn:
+### 4c. Report and let go
 
-   > "Phase 1-4 完成. Codex 在后台执行 plan (job_id=`<id>`, sandbox=danger-full-access).
-   >
-   > 我已 ScheduleWakeup 10 分钟后自动 check 进度. 跑完会自动接 Phase 5 review → finishing menu, 不需要你手动触发.
-   >
-   > 中途想看:
-   > - `tail -f <codex_log_file>` — 实时日志
-   > - `ps -p $(cat <codex_pid_file>)` — 进程状态
-   >
-   > 如果你 `/exit` 退出 session, 回来跑 `/ohaze:ship-review` 续上。"
+> "Phase 1–4 完成. Codex 在后台跑 (codex_bg_id=`<id>`, thread_id=`<UUID|null>`, sandbox=`danger-full-access`).
+>
+> Codex 进程退出后,harness 会自动唤醒主 agent 进 `/ohaze:ship-review`, **无需 ScheduleWakeup**.
+>
+> 想看进度: `BashOutput <codex_bg_id>` 读流式 --json 事件.
+>
+> 如果你 `/exit` 退出 session, harness 重启后跑 `/ohaze:ship-review` 续上 — `.ohaze/current-ship.json.state` 是幂等状态门,会从正确位置接续."
 
-DO NOT proceed inline to Phase 5 in this same `/ohaze:ship` invocation. Phase 5 only fires from the scheduled wakeup (or a user-initiated `/ohaze:ship-review`).
+**Do not call `ScheduleWakeup`.** v2 control flow relies entirely on harness re-invoke after `run_in_background` completion. No fallback wakeup is set — see spec §3 A-plan and `/ohaze:ship-review`'s state-gate for ghost-wake defense.
 
-## Persisting context for /ohaze:ship-review
+Then the main agent's turn ends. Phase 5/6/7 happen via re-invoke + `/ohaze:ship-review`.
 
-To make `/ohaze:ship-review` self-sufficient (it runs in a possibly-different session), write a small handoff file at the end of Phase 4.
+## Persisting context — `.ohaze/current-ship.json` (authoritative schema)
 
-### Step A — Link to a CLAUDE.md todo (precision auto-tick)
+> This is the **authoritative schema** for ship handoff state. Every command/skill that reads/writes the handoff (`/ohaze:ship-review`, `/ohaze:ship-finish`, `/ohaze:status`, `ohaze:codex-executor`, `ohaze:finishing`) MUST conform to it. Adding new fields requires a spec update; removing/renaming requires a coordinated change across all consumers.
 
-Before writing the handoff, ask the user which `- [ ]` in the source project's CLAUDE.md (if any) this ship corresponds to. When the ship completes, vault-adapter will tick exactly that line — no fuzzy matching.
+### Step A — Link to a `linked_todo` (optional precision tick)
 
-1. Locate the **source project** CLAUDE.md (the main repo, not the worktree). From the worktree path strip `/.worktrees/<name>`:
-   ```bash
-   SOURCE_ROOT=$(echo "$worktree_path" | sed 's|/.worktrees/.*||')
-   PENDING=$(grep -nE '^- \[ \] ' "${SOURCE_ROOT}/CLAUDE.md" 2>/dev/null || true)
-   ```
-
-2. If `$PENDING` is empty, set `linked_todo: null` and proceed to Step B. Don't bother asking.
-
-3. Otherwise use `AskUserQuestion` with options = each pending todo text (strip the `- [ ] ` prefix; keep the rest verbatim including any leading marks like `☆`) + a final option **"无对应 todo (跳过)"**. Question header: *"这次 ship 对应 CLAUDE.md 哪条 todo?"*.
-
-4. Capture the user's choice as `linked_todo`:
-   - If they picked a real todo: store the **exact text without the `- [ ] ` prefix** (so adapter can do `sed s/- \[ \] <exact text>/- [x] <exact text>/`).
-   - If they picked "无对应 todo (跳过)": store JSON `null`.
+Before writing the handoff, scan `<main_repo_path>/CLAUDE.md` for pending `- [ ]` todos. If any exist, use `AskUserQuestion` to let the user pick which one (or "无对应 todo") this ship corresponds to. Store the **exact todo text without the `- [ ] ` prefix** as `linked_todo` so `doc-finish` (in `ohaze:finishing`) can later tick it precisely. If no pending todos exist or the user picks "无对应", set `linked_todo: null` and proceed silently.
 
 ### Step B — Write the handoff file
 
-**IMPORTANT — order of operations** (the `Write` tool does NOT create parent directories, so the dir MUST exist first):
+```bash
+mkdir -p <worktree_path>/.ohaze
+```
 
-1. Run `mkdir -p .ohaze` via Bash (relative to the worktree path).
-2. Verify the dir exists with `ls -d .ohaze`.
-3. THEN use the `Write` tool to create `.ohaze/current-ship.json`.
+Then use the **Write tool** to create `<worktree_path>/.ohaze/current-ship.json`. The Write tool is preferred for **structural safety** (the JSON contains arbitrary user strings); there is **no hook dependency** anymore — vault has been stripped from ohaze (a Bash heredoc would also work but is quoting-fragile).
 
-**Must be `Write` tool, not `cat > heredoc`**: vault-adapter's `hooks.json` only fires `PostToolUse` on the `Write` tool. A `Bash` heredoc bypasses E1 entirely — vault never records ship start, and the whole lifecycle chain degrades to silent failure.
+Schema:
 
-If you skip step 1, the first `Write` attempt will fail with "Error writing file", forcing a retry. Don't make that mistake — always `mkdir -p` first.
-
-Handoff file shape:
 ```json
 {
-  "plan_path": "<absolute path>",
-  "base_ref": "<branch>",
-  "worktree_path": "<absolute path>",
-  "spec_path": "<absolute path>",
-  "started_at": "<ISO timestamp>",
-  "retries": 0,
-  "codex_job_id": "<ohaze-<unix_ts>-<pid> generated in codex-executor Phase 4>",
-  "codex_run_id": "<same as codex_job_id (vault-adapter back-compat)>",
-  "codex_session_id": "<UUID usable by codex exec resume, or null>",
-  "codex_pid_file": "<worktree>/.ohaze/codex-<job_id>.pid",
-  "codex_log_file": "<worktree>/.ohaze/codex-<job_id>.log",
-  "project_type": null,
   "state": "running",
-  "linked_todo": "<exact todo text from Step A, or null>"
+  "slug": "<feature-slug>",
+  "branch": "feat/<slug>",
+  "base_ref": "main",
+  "worktree_path": "<absolute path inside repo, e.g. /path/.worktrees/feat-slug>",
+  "main_repo_path": "<absolute main repo path>",
+  "spec_path": "<absolute path to docs/superpowers/specs/<date>-<slug>-design.md>",
+  "plan_path": "<absolute path to docs/superpowers/plans/<date>-<feature>.md>",
+  "retries": 0,
+  "thread_id": "<codex --json thread.started UUID, or null if capture failed>",
+  "codex_bg_id": "<Bash(run_in_background) task id>",
+  "linked_todo": "<exact todo text from Step A, or null>",
+  "project_type": null
 }
 ```
 
-`project_type` starts as `null`; `ohaze:finishing` detects `local` / `remote` in Phase 7 and writes it back to this handoff. `codex_session_id` starts as the captured UUID or `null` if capture failed.
+Field semantics:
 
-`.ohaze/` should be added to `.gitignore` (do this once via the worktree skill or here if missing).
+- `state` enum: `running` | `codex_done` | `review_fail` | `kept` | `self-edit-pending` | `done` | `discarded`. This is the **state gate** that `/ohaze:ship-review` (and the harness re-invoke path) consults first to decide what to do — see `/ohaze:ship-review` for the full action table.
+- `slug`: used everywhere (branch name suffix, spec/plan filename suffix).
+- `branch`: full branch ref (`feat/<slug>` / `fix/<slug>` / `hotfix/<slug>`).
+- `worktree_path`: the linked worktree where Codex runs.
+- `main_repo_path`: required for teardown (`cd "$main_repo_path"` before `git worktree remove` — see `ohaze:using-git-worktrees` "Removing a Worktree Safely").
+- `thread_id`: passed to `codex exec resume <thread_id>` (without `--sandbox`) in retry / modify / 6th-option finishing flows.
+- `codex_bg_id`: read with `BashOutput <codex_bg_id>` to inspect Codex progress or extract the final report.
+- `linked_todo`: ticked by `doc-finish`.
+- `project_type`: stays `null` here; `ohaze:finishing` detects `local` / `remote` in Phase 7 and writes it back.
+
+**Removed in v2 (do not re-introduce):** `codex_session_id` (renamed to `thread_id`), `codex_run_id`, `codex_job_id`, `codex_pid_file`, `codex_log_file`, `codex_thread_resume`, `started_at`. All were tied to the legacy nohup+ScheduleWakeup+vault-adapter pipeline.
+
+### Step C — Ensure `.worktrees/` and `.ohaze/` are gitignored
+
+If `.gitignore` (at `main_repo_path`) doesn't already ignore `.worktrees/` and `.ohaze/`, add them and commit on `main` once. Both are runtime artifacts, never committed.
 
 ## Failure modes
 
-- User aborts during brainstorming or plan review: stop cleanly, leave the worktree in place, do not dispatch Codex.
-- `superpowers:writing-plans` returns no usable plan path: stop and ask user.
-- `ohaze:codex-executor` fails to dispatch (Codex unauthenticated, etc.): stop and surface the error.
+- `codex` CLI missing → stop and tell user how to install.
+- User aborts during brainstorming or plan review → stop cleanly, leave the worktree in place, do not dispatch Codex.
+- `ohaze:writing-plans` returns no usable plan path → stop and ask user.
+- `ohaze:codex-executor` fails to dispatch (Codex unauthenticated, etc.) → stop and surface the error verbatim.
+- Working tree dirty at Pre-flight → stop; possibly a parallel session, do not auto-recover.
 
 ## Notes
 
-- This command does NOT call `superpowers:subagent-driven-development` or `superpowers:executing-plans`. Those are replaced by `ohaze:codex-executor` for the execution stage.
-- This command does NOT call `superpowers:finishing-a-development-branch`. That happens in `/ohaze:ship-review` after the review loop.
+- This command does NOT call `superpowers:*` skills. brainstorming + using-git-worktrees + writing-plans are all self-hosted under `plugins/ohaze/skills/`.
+- This command does NOT call `superpowers:subagent-driven-development` or `superpowers:executing-plans`. Codex is the implementer.
+- This command does NOT call `superpowers:finishing-a-development-branch`. That happens in `ohaze:finishing` (Phase 7), invoked via `/ohaze:ship-review`.
+- This command does NOT call `ScheduleWakeup`. v2 control flow = `run_in_background` + harness re-invoke + idempotent state gate. The state gate in `/ohaze:ship-review` is the only ghost-wake defense.
