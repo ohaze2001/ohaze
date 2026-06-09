@@ -45,12 +45,25 @@ Read `state` from `<worktree>/.ohaze/current-ship.json` and act per this table. 
 When the harness re-invokes the main agent after a `Bash(run_in_background)` Codex task completes, the harness does NOT mutate `current-ship.json` — that's ohaze's job. Without an explicit transition here, the gate would loop forever on `state=running`. So:
 
 1. Read `codex_bg_id` from the handoff.
-2. Call `BashOutput <codex_bg_id>` and inspect both the streamed output and the task status (the BashOutput tool reports whether the background task is still running, completed, or killed):
-   - **If the task is still running** (Codex hasn't exited yet, the background task status is still `running`): truly wait. Tell the user `"Codex 还在跑 (codex_bg_id=<id>), 进程仍活. Harness 会在完成时自动再唤醒主 agent."` and end the turn. Do NOT transition state.
-   - **If the task has completed** (background task status = `completed` or process exited): scan the tail of its `--json` output for the final `message` event (Codex's structured report) AND for any unhandled error.
-     - If output looks normal (has a final `message` event, no unhandled error): **transition `state = "codex_done"`** via Write tool on `current-ship.json`, then fall through to Phase 5 (Review). The transition write is the missing link that makes the state gate work.
-     - If output shows Codex died mid-run (unhandled error, no final `message`, or output is truncated): surface the error verbatim to the user and stop. Do NOT enter review on incomplete work. Suggest the user inspect with `BashOutput <codex_bg_id>` and either manually fix or start a fresh `/ohaze:ship`.
-   - **If `codex_bg_id` is missing from the handoff** (legacy v1 or capture failure): treat as if the task completed and proceed to scan output — but warn the user that liveness check is degraded.
+2. Call `BashOutput <codex_bg_id> filter='"type":"(message|error)"|panic|fatal|unhandled'` and inspect both the (now-bounded) filtered output and the task status. The `filter` parameter is REQUIRED — codex's `--json` stream for a multi-hour run can be 5-20 MB of intermediate event payloads; without filter the entire buffer would be pulled into context and exhaust the window before Step 3a can reason about it. The filter keeps only liveness/final-report-relevant events.
+3. Decide by combining task status + presence of final `message` event in the filtered tail. Use this 3-way branch (note tiebreaker for the codex emit-final-then-exit race window):
+
+   **(a) Task completed (background task status = `completed` or process exited):**
+   - Scan the filtered tail for the final `message` event AND for any unhandled error.
+   - If output looks normal (has a final `message` event, no unhandled error): **transition `state = "codex_done"`** via Write tool on `current-ship.json` (per the Read-modify-Write protocol in `ship.md` §Write Protocol), then fall through to Phase 5 (Review).
+   - If output shows Codex died mid-run (unhandled error, no final `message`, or output is truncated): surface the error verbatim and stop. Do NOT enter review on incomplete work.
+
+   **(b) Task still running BUT final `message` event already present in filtered tail (race-window tiebreaker):**
+   - This is the codex 0.137 emit-final-then-exit window (tens of ms to seconds between the final JSON event emission and the actual process exit syscall). Without this tiebreaker we'd fall into branch (c) → end turn → and if the harness re-invoke that brought us here was the only one we'll get for this task, we'd deadlock.
+   - Sleep briefly (~2s) via `Bash(sleep 2)`, then re-query `BashOutput <codex_bg_id> filter=...` once.
+     - If task status is now `completed`: fall through to branch (a).
+     - If task status is STILL `running` after the recheck (codex genuinely emitted a non-final message): fall through to branch (c) — truly wait.
+
+   **(c) Task still running, no final `message` event in filtered tail:**
+   - Codex is genuinely working. Tell the user `"Codex 还在跑 (codex_bg_id=<id>), 进程仍活. Harness 会在完成时自动再唤醒主 agent."` and end the turn. Do NOT transition state.
+
+   **(d) `codex_bg_id` missing from handoff** (legacy v1 or capture failure):
+   - Treat as if the task completed and proceed to scan whatever's available — but warn the user that liveness check is degraded.
 
 > Why this lives here, not in codex-executor: the transition must happen BEFORE Phase 5 enters codex-executor, because codex-executor only runs in review mode when the gate says `codex_done`. ship-review.md owns the gate, so it owns the transition.
 
