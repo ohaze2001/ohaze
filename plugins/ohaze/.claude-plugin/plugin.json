@@ -1,7 +1,7 @@
 {
   "name": "ohaze",
-  "version": "1.9.2",
-  "description": "Personal Claude Code workflow: superpowers brainstorm/plan + Codex execute + Claude review + superpowers finishing",
+  "version": "2.0.0",
+  "description": "Self-contained Claude Code workflow plugin: brainstorm + plan + Codex execute + adversarial cross-source review + finishing. Zero runtime external skill dependencies.",
   "author": {
     "name": "muling-dev",
     "email": "viv1dguycn@gmail.com"
@@ -11,9 +11,9 @@
   "license": "MIT",
   "keywords": [
     "workflow",
-    "superpowers",
     "codex",
     "tdd",
-    "orchestration"
+    "orchestration",
+    "adversarial-review"
   ]
 }
