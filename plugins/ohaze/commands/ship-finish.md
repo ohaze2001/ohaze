@@ -1,5 +1,5 @@
 ---
-description: Re-enter finishing for an /ohaze:ship that was paused (option 4 「先不处理」, option 5c 「我自己改」) or self-edited. Idempotent state-gate entry; optionally re-runs review, then shows the 6-option finishing menu.
+description: Re-enter finishing for an /ohaze:ship that was paused (option 4 「先不处理」, option 2c 「我自己改」) or self-edited. Idempotent state-gate entry; optionally re-runs review, then shows the 6-option finishing menu.
 argument-hint: "[--skip-review] (skip the optional re-review)"
 allowed-tools: Bash, BashOutput, Read, Write, Edit, Skill, Agent, AskUserQuestion
 ---
@@ -52,7 +52,7 @@ If `worktree_path` is gone (user removed it manually, or a parallel session clea
 
 So all `.ohaze/*` paths resolve correctly and commits land on the right branch.
 
-## Step 1 — Detect uncommitted changes (likely from option 5c self-edit)
+## Step 1 — Detect uncommitted changes (likely from option 2c self-edit)
 
 ```bash
 git status --short
@@ -131,5 +131,5 @@ The finishing skill owns project-type detection, recommended finish chain, docum
 
 - `/ohaze:ship-finish` is idempotent: the state gate makes it safe to invoke twice. Running on `state=done` is a no-op.
 - It does NOT re-dispatch Codex from scratch. For that use `/ohaze:ship` again (a fresh ship).
-- This command exists so you can pause via finish menu option 4 (`kept`) or option 5c (`self-edit-pending`) and pick up later without losing state.
+- This command exists so you can pause via finish menu option 4 (`kept`) or option 2c (`self-edit-pending`) and pick up later without losing state.
 - This command does NOT call `ScheduleWakeup` and does NOT poll pid files. v2 control flow = `run_in_background` + harness re-invoke + idempotent state gate.

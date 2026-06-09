@@ -15,7 +15,7 @@ From the caller (read from `.ohaze/current-ship.json` + the latest verdict file)
 - `base_ref`, `branch`
 - `plan_path`, `spec_path`
 - `retries`, `linked_todo`
-- `thread_id` (for modify 5a + 6th-option ADVERSARIAL fix; `codex exec resume <thread_id>` without `--sandbox`)
+- `thread_id` (for modify 2a + 6th-option ADVERSARIAL fix; `codex exec resume <thread_id>` without `--sandbox`)
 - `review_verdict_path` — `<worktree_path>/.ohaze/review-verdict.json` (consumed for ADVERSARIAL items + DOC-DRIFT items)
 - optional: `codex_bg_id`, `project_test_command`
 
@@ -273,7 +273,7 @@ Ask the user for `change_description`, then who handles it:
 2. Claude 主线程直接改 (适合改名, 加注释, 修单行 bug)
 3. 我自己改 (退出, 我去 .worktrees 改完跑 /ohaze:ship-finish 回来)
 
-### 5a — Codex 续跑
+### 2a — Codex 续跑
 
 Build a delta prompt:
 
@@ -317,7 +317,7 @@ If `thread_id` is missing, fall back to `cd <worktree_path> && codex exec resume
 
 After Codex returns (foreground), run `ohaze:codex-executor` Phase 5.0 to commit pending changes with a message derived from `change_description`. Then ask whether to re-run review. Re-review does NOT increment the retry counter (user-initiated, not reviewer-driven). Loop back to the finishing menu.
 
-### 5b — Claude 主线程直接改
+### 2b — Claude 主线程直接改
 
 Inspect relevant files with Read, apply the requested narrow edit with Edit or Write, then run the project test command if one exists:
 
@@ -327,7 +327,7 @@ cd <worktree_path> && <project_test_command>
 
 If checks pass, commit with a suitable `refactor:` or `fix:` style message. If checks fail, report the failure and ask whether to fix or hand back. Then ask whether to re-run review and loop back to the menu.
 
-### 5c — 我自己改 (self-edit)
+### 2c — 我自己改 (self-edit)
 
 Update `.ohaze/current-ship.json` with `state = "self-edit-pending"`. Tell the user:
 
@@ -354,4 +354,4 @@ After terminal actions, print:
 - Worktree missing or detached: stop and ask for manual intervention.
 - Push/PR failure: surface the exact error and return to the menu.
 - Merge `--ff-only` failure: use the merge-commit vs exit prompt above.
-- Codex resume in option 6 / modify 5a fails to find prior thread: fall back to fresh `codex exec` with embedded original goal, log warning.
+- Codex resume in option 6 / modify 2a fails to find prior thread: fall back to fresh `codex exec` with embedded original goal, log warning.

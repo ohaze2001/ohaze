@@ -11,7 +11,7 @@ Hand a translated XML prompt to Codex via the `codex` CLI, then run the Claude-s
 
 - Inside `/ohaze:ship` after `ohaze:plan-to-codex-prompt` produces an XML prompt.
 - Inside `/ohaze:ship-review` (after the harness re-invokes the main agent because the background Codex run completed) to run the review-fix loop.
-- Inside `ohaze:finishing` Step 5a (modify sub-flow) or Step 6 (修复对抗审查后收尾) to dispatch a follow-up fix.
+- Inside `ohaze:finishing` Step 2a (modify sub-flow: Codex 续跑) or Step 6 (修复对抗审查后收尾) to dispatch a follow-up fix.
 
 ## Inputs
 

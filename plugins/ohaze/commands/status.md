@@ -69,7 +69,7 @@ Use the handoff's `state` field as the **primary judge**:
 | `codex_done` | 等审查 |
 | `review_fail` | 修复中 (retry N/3) |
 | `kept` | 等 finish (option 4 暂存) |
-| `self-edit-pending` | 等手改后 finish (option 5c) |
+| `self-edit-pending` | 等手改后 finish (option 2c) |
 | `done` | 已完成 (一般 handoff 已被 finishing 删除; 若仍在, 是异常) |
 | `discarded` | 已丢弃 (同上, 异常) |
 
