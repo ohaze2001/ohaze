@@ -35,19 +35,19 @@
 | superpowers | 全解耦，**fork 子集**（brainstorming 砍 companion + using-git-worktrees），零运行时外部 skill 依赖 |
 | 执行引擎 | Codex 保留，**异源对抗**（Codex 写 / Opus 审，刻意异模型异厂）|
 | 后台机制 | `run_in_background`（**无 nohup**），完成即 harness re-invoke |
-| 防幽灵唤醒 | **review 幂等状态门**；ScheduleWakeup 降级为长 fallback（dogfood 已验证 re-invoke 可靠，可不设）|
-| 流程序 | **先 worktree 再 brainstorm/spec**，分支名从 feature 描述 slug，spec 落 feat 分支，main 全程干净 |
+| 防幽灵唤醒 | **review 幂等状态门(唯一防线)** + **不设 ScheduleWakeup 兜底**（A 方案,主触发纯 harness re-invoke）→ 杜绝完成后二次唤醒 |
+| 流程序 | **brainstorm(主仓纯对话,不落档) → worktree → 写 spec(worktree 内 commit)**，分支名从 feature 描述 slug，main 全程干净 |
 | 项目定位 | ship 加**显式项目路径参数**，不靠 pwd（harness 会重置 cwd，dogfood 实证）|
 | 文档内化 | 内化 md-init（开工四件套完备性检查）+ neat（收尾完整落点路由），**止于四件套，不碰 decisions/** |
 | vault | **流程层剥离**（删 hooks + adapter + ship-result.json + .vault-sync-state.json），`.ohaze/*.json` 保留为 ship 自身状态，不预留重连接口（YAGNI）|
-| 审查 | 异源 + **实跑验证**（不只读 diff）+ retry **卡住升级**；DOC-DRIFT(发现)/doc-finish(修复) 分工 |
+| 审查 | 异源 + **实跑验证**（不只读 diff）+ retry **卡住升级**；DOC-DRIFT(发现)/doc-finish(修复) 分工；ADVERSARIAL 不 gate、交 haze，可经 finish 新增「修复对抗审查后收尾」项处理 |
 | 编排 | **CLI + harness（dogfood 验证）**：主 agent `Bash(run_in_background)` 调 codex exec + 薄 markdown 编排；**不用 codex SDK**（要 Node orchestrator，会架空 Claude 异源 review）；骨架至多包小 shell 助手 |
 | 文档维护 | **四件套对齐**（删 VAULT-CONTEXT.md + 修 README:152 死链）|
 | 版本 | **v2.0.0** |
 
 ## 目标架构
 
-### 主流程（Phase 1/2 已对调）
+### 主流程（brainstorm → worktree → spec）
 
 ```
 /ohaze:ship "需求"
@@ -55,16 +55,17 @@
 ├─ Pre-flight  检查 codex CLI(硬依赖) + 分支安全(当前分支==目标?工作区干净?)
 │              + 四件套完备性(内化 md-init,缺则按类型补,齐则跳过;在主仓内做)
 │              ※ 目标项目用显式路径参数锁定，不靠 pwd（harness 重置 cwd）
-├─ Phase 1  建 worktree + cd 进去   ← 自持 using-git-worktrees(fork)，分支名 = feature 描述 slug
-├─ Phase 2  brainstorm + 写 spec + commit  ← 自持 brainstorming(fork,砍 companion)，spec 落 feat 分支
+├─ Phase 1  brainstorm 确定设计   ← 自持 brainstorming(fork,砍 companion)，主仓内纯对话澄清，不落任何文件
+├─ Phase 2  建 worktree + cd → 写 spec + commit   ← 自持 using-git-worktrees(fork)，分支名=feature slug
+│              先建 worktree 再把敲定设计写成 spec 文件并在 worktree 内 commit，main 全程干净
 ├─ Phase 3  writing-plans → guidance plan   ← 已自持
-├─ Phase 4  plan→XML + run_in_background 跑 codex exec(无 nohup) → 捕获 thread_id
+├─ Phase 4  plan→XML + run_in_background 跑 codex exec(无 nohup, 初始带 --sandbox danger-full-access) → 捕获 thread_id
 │           ⟳ harness 完成即 re-invoke ── 经「幂等状态门」──┐
 ├─ Phase 5  补 commit → 审查(异源对抗 + 实跑验证) → verdict ←┘
 │              ├ PASS → Phase 7
 │              └ FAIL → Phase 6
-├─ Phase 6  retry(卡住升级, ≤3)：codex exec resume <thread_id> → 修完回 Phase 5
-└─ Phase 7  finishing: 状态门菜单 + doc-finish(内化 neat 完整路由) + 收尾链(删 worktree 前 cd 回主仓)
+├─ Phase 6  retry(卡住升级, ≤3)：codex exec resume <thread_id>(不带 --sandbox) → 修完回 Phase 5
+└─ Phase 7  finishing: 状态门菜单(有 ADVERSARIAL 则多「修复对抗审查后收尾」项) + doc-finish(内化 neat 完整路由) + 收尾链(删 worktree 前 cd 回主仓)
 ```
 
 ### 模块结构（`plugins/ohaze/`）
@@ -83,12 +84,13 @@
 - **fork `brainstorming`** 进 `skills/`：**砍掉 visual companion**（web server，自动流用不上），只留「文本澄清 → 设计 → 写 spec」核心。改 spec 落档时机为 worktree-aware（不在 main commit）。
 - **fork `using-git-worktrees`** 进 `skills/`：带上 v5.1.0 的环境检测（已在 worktree 内则跳过）+ cwd 安全；内建「删 worktree 前 cd 回主仓」。
 - **`writing-plans`** 已 fork（`ohaze:writing-plans`），保留 + **确认 MIT 署名**（法律义务）。
-- **清理**：plugin.json description/keywords 去 superpowers；移除各处 "Do NOT invoke superpowers:X" 负向声明；ship.md Phase 1/2 调用点改指 ohaze 自持 skill。
+- **清理**：plugin.json description/keywords 去 superpowers；移除各处 "Do NOT invoke superpowers:X" 负向声明；ship.md Phase 1/2（brainstorm/worktree）调用点改指 ohaze 自持 skill。
 - **锁基线 + 检查点**：锁 superpowers v5.1.0 形态；留一个「定期 diff 上游 brainstorming/using-git-worktrees SKILL.md」的兜底说明。
 
-### 2. 流程重排（worktree-first）
+### 2. 流程重排（brainstorm → worktree → spec）
 
-- **分支名 = ship feature 描述（`$ARGUMENTS`）slug**，不再从 spec 文件名 derive → worktree 可最先建。例：`给登录页加双因子` → `feat/2fa-login`。
+- **顺序定稿**：Phase 1 brainstorm 在**主仓内纯对话澄清**（确定设计，**不落任何文件**）→ Phase 2 建 worktree + cd → 在 worktree 内**写 spec 文件 + commit**。brainstorm 提到 worktree 之前：人机对话不必困在隔离环境，且主仓工作区在建 worktree 时保持干净（无未提交改动挡路）。
+- **分支名 = ship feature 描述（`$ARGUMENTS`）slug**，brainstorm 前即可定（功能本质不随澄清改变），不从 spec 文件名 derive。例：`给登录页加双因子` → `feat/2fa-login`。
 - spec 文件名复用同一 slug（`<date>-<slug>-design.md`），**在 worktree 内 commit**。
 - main 全程不被碰，并行多 ship 互不污染，`merge --ff-only` 不再因 main 被 spec 污染而失败。
 
@@ -105,7 +107,8 @@
   | `review_fail` | 进 retry |
   | `kept` / `self-edit-pending` | 提示 `ship-finish` 恢复 |
 
-- **ScheduleWakeup**：不再做 600s 轮询。主触发 = re-invoke。可选长 fallback（1200s+）同样过状态门；dogfood 已验证 re-invoke 可靠，**可完全不设**。
+- **ScheduleWakeup**：**不设兜底唤醒**（A 方案定稿）。主触发 = harness re-invoke（dogfood 已验证可靠，code done 即自动唤醒主 agent）。彻底不设 → 无单次唤醒残留、无需「主动取消」逻辑，从源头杜绝二次无谓唤醒（haze 旧痛点：任务完成后 ScheduleWakeup 不自动取消、到点仍执行 —— 详见污染 session USER #14）。幂等状态门作为**唯一防线**，吃掉任何意外重入。
+  > 取舍：放弃「re-invoke 万一失灵的兜底」。依据 = dogfood 两次后台任务均自动唤醒，re-invoke 可靠性已验证；保留兜底反而引入「单次 ScheduleWakeup 不可程序取消、需 cron 才能主动删」的复杂度，与极简原则冲突。
 
 ### 4. 审查增强（codex-executor）
 
@@ -113,6 +116,7 @@
 - **实跑验证**：审查必须实跑 project test command + 关键验证，用真实输出下 verdict，不只读 diff（内化 verification-before-completion）。
 - **retry 卡住升级**：连续 FAIL 同一类 issue → 先诊断「plan 问题 vs Codex 问题」（内化 systematic-debugging），不盲目 resume 到第 3 次；指向 plan 则回退修 plan，指向执行考虑 Claude 介入。
 - **DOC-DRIFT / doc-finish 分工**：审查 PART3 只「发现」描述失真（advisory，写 review-verdict.json），doc-finish 统一「路由归位 + 修复」，不重复检测。
+- **ADVERSARIAL 发现的处置**：CRITICAL/IMPORTANT gate ship（FAIL → 下发 codex 修）；ADVERSARIAL 是**设计级风险，不 gate、不自动下发 codex**，写入 `review-verdict.json` 交 haze 判断。新增结构化修复入口：haze 可在 Phase 7 finishing 菜单选**「修复对抗审查后收尾」**（现有 5 选项 → **6 选项，第 6 项仅当本次有 ADVERSARIAL findings 时出现，其余 5 项不变**），把勾选的 ADVERSARIAL 项组 fix prompt → `codex exec resume`(不带 --sandbox) 修复 → 复验 → 再走收尾链。
 
 ### 5. 文档契约内化（四件套）
 
@@ -150,7 +154,8 @@ vault 剥离后这些文件不再触发 hook，角色回归「ship 自身状态�
 > **集成方式 = CLI exec + run_in_background（dogfood 验证），不用 codex SDK**：codex 0.137 虽有官方 SDK `@openai/codex-sdk`(TS)，但它是给 **Node orchestrator** 用的，而 ohaze 的 orchestrator 是 **Claude 主 agent** —— 用 SDK 会架空 Claude 异源 review（详见 §11）。故 codex 侧走下方 CLI 命令契约。resume 坑（对 `codex exec resume` 同样适用）：超长靠自动 compaction（旧细节摘要丢失）、跨目录 resume 需 `--all`、`--ephemeral` 不能 resume、反复启动有幽灵 token([#19996](https://github.com/openai/codex/issues/19996))。
 
 **codex 命令契约：**
-- 执行 `codex exec [opts] < prompt`；恢复 `codex exec resume <thread_id> [opts] < fix_prompt`（**exec 子命令**，区别于顶层交互 `codex resume`）。
+- 执行 `codex exec [opts] < prompt`（初始 dispatch 带 `--sandbox danger-full-access --cd <worktree> --json`）；恢复 `codex exec resume <thread_id> [opts] < fix_prompt`（**exec 子命令**，区别于顶层交互 `codex resume`）。
+- **resume 不重复传 `--sandbox`**：`codex exec resume` 不支持 `--sandbox danger-full-access`（haze 实测 + 现有 `codex-executor:280-281` resume 命令仍带该参数的实现 bug 印证）；sandbox 在初始 `codex exec` 已确定、resume 继承同一 session 配置。故 resume 只带 `--cd <worktree> --json` 等必要 opts，**不再带 `--sandbox`**。
 - **session 捕获**：`--json` 首事件即 `{"type":"thread.started","thread_id":"<UUID>"}` —— 字段名是 **`thread_id`**（非 session_id），与 `~/.codex/sessions/.../rollout-*-<UUID>.jsonl` 文件名一致。捕获 = 解析 `--json` 首个 `thread.started` 事件。
 - **拿 report**：从 `--json` 末尾的 message 事件提取。**实测：`-o/--output-last-message` 在 `--json` 下不产出文件，不依赖它**。
 - **不用 `--ephemeral`**（要持久化 session 才能 resume）；codex exec **必须在真实 git 项目目录**跑（`/tmp` 下 exit 1）。
@@ -180,7 +185,7 @@ harness 注入 <task-notification completed> → 自动 re-invoke   ← ② 控�
 主 agent 唤醒 → 先过「幂等状态门」(读 current-ship.json.state)
   │ 派 general-purpose subagent 异源 review（同步等 verdict）
   ├ PASS → Phase 7 finishing
-  └ FAIL → 结构化 fix prompt → codex exec resume <thread_id> + run_in_background  ← ① 再让出
+  └ FAIL → 结构化 fix prompt → codex exec resume <thread_id>(不带 --sandbox) + run_in_background  ← ① 再让出
        ▼  循环（retries+1，≤3；连续同类 FAIL → 卡住升级诊断）
 ```
 
