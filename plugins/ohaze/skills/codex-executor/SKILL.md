@@ -130,7 +130,7 @@ ohaze keeps commit authority at the orchestrator (Claude main session) by conven
 
 4. If the working tree is already clean (Codex committed itself, or there were no changes), skip step 3.
 
-After Phase 5.0, transition `current-ship.json.state = "codex_done"` if it isn't already.
+> Note on state transition: `state = "codex_done"` was already written by `ship-review.md` Step 3a BEFORE this skill was invoked in review mode — `ship-review.md` owns the gate transition (see ship-review.md §3a "Why this lives here, not in codex-executor"). Do NOT re-write it here. The earlier v2 redundant write ("if it isn't already") was removed as part of code-review-2 #R8 to honor the ownership claim and avoid a Read-modify-Write race that the v2 schema does not guard against.
 
 ### Phase 5.1: Compute the diff to review
 

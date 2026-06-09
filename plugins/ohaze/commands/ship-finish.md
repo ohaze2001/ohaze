@@ -116,7 +116,7 @@ Invoke the `ohaze:finishing` skill. Pass the full finishing context from `.ohaze
 - `spec_path`
 - `retries`
 - `linked_todo`
-- `thread_id` (for modify sub-flow 5a / 6th-option ADVERSARIAL fix; resume without `--sandbox`)
+- `thread_id` (for modify sub-flow 2a / 6th-option ADVERSARIAL fix; resume without `--sandbox`)
 - `review_verdict_path`: `<worktree_path>/.ohaze/review-verdict.json`
 
 The finishing skill owns project-type detection, recommended finish chain, document finish (neat-style routing internalized), the 6-option menu (6th option appears only when ADVERSARIAL findings exist), terminal result cleanup, and the modify sub-flow.

@@ -135,7 +135,7 @@ The finishing skill owns: project-type detection, recommended finish chain, docu
 
 ## Failure Modes
 
-- Background Codex genuinely failed (the `--json` stream tail shows an unhandled error, not just incomplete output): surface the error verbatim; do NOT enter review loop. Suggest the user re-run `codex exec resume <thread_id> --cd <worktree> --json` (NOT `--sandbox` — sandbox is fixed at initial dispatch) manually with a corrective prompt, or warn before using the `--last` fallback if `thread_id` is absent.
+- Background Codex genuinely failed (the `--json` stream tail shows an unhandled error, not just incomplete output): surface the error verbatim; do NOT enter review loop. Suggest the user re-run `cd <worktree> && codex exec resume <thread_id> --json` (NOT `--cd`, NOT `--sandbox` — both are rejected by codex 0.137 on resume) manually with a corrective prompt, or warn before using the `--last` fallback if `thread_id` is absent.
 - Reviewer subagent returns malformed verdict twice: fall back to asking the user to read `git diff` and judge.
 - Handoff file references a worktree path that no longer exists: stop, surface, ask user.
 - Push fails (no remote, auth missing): not this skill's problem — `ohaze:finishing` owns push/PR and surfaces those errors itself.
