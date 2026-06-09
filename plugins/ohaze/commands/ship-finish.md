@@ -84,7 +84,7 @@ Otherwise ask:
 > "2. 否, 直接进 finishing 菜单"
 
 If 1:
-- Invoke `ohaze:codex-executor` in **review mode** (Phase 5.1 + 5.2 only — Step 1 already committed any pending work, so Phase 5.0 is a no-op).
+- Invoke `ohaze:codex-executor` with **`mode='review'`** (REQUIRED — skips Phase 4 dispatch, enters at Phase 5.0. Step 1 already committed any pending work so Phase 5.0 is a no-op in this path).
 - Pass `thread_id` from the handoff for any potential resume (resume drops `--sandbox` per codex 0.137).
 - If FAIL: enter the review-fix loop just like `/ohaze:ship-review` does (max 3 retries, increment `.ohaze/current-ship.json.retries`, `codex exec resume <thread_id>` via `Bash(run_in_background)` — no `--sandbox`).
 - If PASS: continue to Step 3.

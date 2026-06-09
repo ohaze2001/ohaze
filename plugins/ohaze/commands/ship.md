@@ -121,6 +121,7 @@ The skill returns a single XML prompt string. Capture it.
 
 Invoke `ohaze:codex-executor` with:
 
+- `mode`: `'dispatch'` (required — initial Phase 4 entry. Without this explicit value codex-executor's missing-mode fallback degrades to 'dispatch' anyway, but the contract requires it explicit)
 - `codex_prompt`: the XML from 4a
 - `plan_path`: same as Phase 3
 - `spec_path`: from Phase 2b

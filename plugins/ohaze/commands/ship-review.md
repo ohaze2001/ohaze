@@ -60,8 +60,9 @@ If `--more` is present in `$ARGUMENTS`, allow the review-fix loop to exceed the 
 
 ## Phase 5–6 — Review + Retry Loop (delegated to `ohaze:codex-executor`)
 
-Invoke `ohaze:codex-executor` in **review mode** with:
+Invoke `ohaze:codex-executor` in review mode with:
 
+- `mode`: `'review'` (required — REQUIRED to skip Phase 4 dispatch and enter at Phase 5.0. Without this explicit value, codex-executor's missing-mode fallback degrades to 'dispatch', which would re-dispatch a fresh Codex on top of the already-completed run)
 - `plan_path`, `spec_path`, `base_ref`, `worktree_path`, `main_repo_path`: from the handoff
 - `thread_id`: from the handoff (used by retry's `codex exec resume <thread_id>` — no `--sandbox`)
 - `project_test_command`: from the handoff (or re-detect from project files if absent)
