@@ -32,19 +32,27 @@ Read `state` from `<worktree>/.ohaze/current-ship.json` and act per this table. 
 |---|---|
 | missing key, or file absent | Stop silently — handoff is gone, this is a stray. |
 | `done` or `discarded` | Stop silently — ship already finished. **Idempotent no-op.** This is what catches the wake-up that fires after a ship completed. |
-| `running` | Do nothing (Codex is still working). Tell the user "Codex 还在跑, harness 会在完成时自动再唤醒". End the turn. |
-| `codex_done` | Proceed to the review loop (Phase 5 below). The harness re-invoke after `run_in_background` completion should set this — but `codex_done` may also be set explicitly by `ohaze:codex-executor` Phase 5.0 just before review. |
+| `running` | **Run the liveness-detect-and-transition flow** (Step 3a below). May transition to `codex_done` then continue, OR genuinely wait. |
+| `codex_done` | Proceed to the review loop (Phase 5 below). |
 | `review_fail` | Proceed to retry (Phase 6 in `ohaze:codex-executor`). Retry counter is already in the handoff. |
 | `kept` | Tell the user the previous ship was paused via finish menu option 4 → suggest `/ohaze:ship-finish` to resume. End. |
-| `self-edit-pending` | Tell the user the previous ship was paused via finish menu option 5c → suggest `/ohaze:ship-finish` after their manual edits. End. |
+| `self-edit-pending` | Tell the user the previous ship was paused via finish menu option 2c → suggest `/ohaze:ship-finish` after their manual edits. End. |
 
 > The gate eats ghost wake-ups, double `/ohaze:ship-review` invocations, and accidental re-invokes alike. There is no fallback `ScheduleWakeup` because dogfood (spec §3) proved harness re-invoke is reliable; A-plan: state gate is the only defense.
 
-### 4. (Optional) Verify Codex actually finished
+### 3a. `state=running` liveness-detect-and-transition (REQUIRED — fixes the gate's chicken-and-egg)
 
-For belt-and-braces, read the tail of the background task's output via `BashOutput <codex_bg_id>` (handoff field `codex_bg_id`). Look for the final `message` event in the `--json` stream, or an unhandled error. If output suggests Codex died mid-run, surface the error and stop — do NOT run review on incomplete work.
+When the harness re-invokes the main agent after a `Bash(run_in_background)` Codex task completes, the harness does NOT mutate `current-ship.json` — that's ohaze's job. Without an explicit transition here, the gate would loop forever on `state=running`. So:
 
-(There is no `codex_pid_file` / `kill -0` check anymore — `run_in_background` task lifecycle is fully owned by the harness.)
+1. Read `codex_bg_id` from the handoff.
+2. Call `BashOutput <codex_bg_id>` and inspect both the streamed output and the task status (the BashOutput tool reports whether the background task is still running, completed, or killed):
+   - **If the task is still running** (Codex hasn't exited yet, the background task status is still `running`): truly wait. Tell the user `"Codex 还在跑 (codex_bg_id=<id>), 进程仍活. Harness 会在完成时自动再唤醒主 agent."` and end the turn. Do NOT transition state.
+   - **If the task has completed** (background task status = `completed` or process exited): scan the tail of its `--json` output for the final `message` event (Codex's structured report) AND for any unhandled error.
+     - If output looks normal (has a final `message` event, no unhandled error): **transition `state = "codex_done"`** via Write tool on `current-ship.json`, then fall through to Phase 5 (Review). The transition write is the missing link that makes the state gate work.
+     - If output shows Codex died mid-run (unhandled error, no final `message`, or output is truncated): surface the error verbatim to the user and stop. Do NOT enter review on incomplete work. Suggest the user inspect with `BashOutput <codex_bg_id>` and either manually fix or start a fresh `/ohaze:ship`.
+   - **If `codex_bg_id` is missing from the handoff** (legacy v1 or capture failure): treat as if the task completed and proceed to scan output — but warn the user that liveness check is degraded.
+
+> Why this lives here, not in codex-executor: the transition must happen BEFORE Phase 5 enters codex-executor, because codex-executor only runs in review mode when the gate says `codex_done`. ship-review.md owns the gate, so it owns the transition.
 
 ### 5. `--more` flag
 
