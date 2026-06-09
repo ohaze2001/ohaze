@@ -15,12 +15,22 @@ Hand a translated XML prompt to Codex via the `codex` CLI, then run the Claude-s
 
 ## Inputs
 
-- `codex_prompt` (required): the full XML string from `ohaze:plan-to-codex-prompt`.
+- `mode` (required, enum): `'dispatch'` for initial Codex run (enter at Phase 4) or `'review'` for re-entry after Codex completion (skip Phase 4, enter at Phase 5.0). Callers `/ohaze:ship` Phase 4 pass `mode='dispatch'`; `/ohaze:ship-review` Phase 5–6 and `/ohaze:ship-finish` Step 2 re-review pass `mode='review'`.
+- `codex_prompt` (required when `mode='dispatch'`): the full XML string from `ohaze:plan-to-codex-prompt`. Ignored when `mode='review'`.
 - `plan_path` (required): the absolute path to the plan markdown, used by the reviewer.
+- `spec_path` (required for `mode='review'`): the absolute path to the spec markdown, substituted into the reviewer prompt template (the `{spec_path}` token in the PART 1 contract-compliance section). Callers `ship.md` Phase 4b / `ship-review.md` / `ship-finish.md` all pass this.
 - `base_ref` (required): the git ref Codex's work started from (typically the worktree's parent branch, e.g. `main`).
 - `worktree_path` (required for review/retry): the ship worktree path.
-- `project_test_command` (required for review): the command the reviewer runs to verify behavior (e.g. `npm test`, `pytest`).
-- `thread_id` (optional but expected for retry): read from `.ohaze/current-ship.json`; used for exact `codex exec resume <thread_id>`.
+- `main_repo_path` (optional, recommended): used only if a fallback (e.g. fresh `codex exec` after exact resume fails) needs to know the main checkout location.
+- `project_test_command` (required for review): the command the reviewer runs to verify behavior (e.g. `npm test`, `pytest`). For Markdown-only plugins where no aggregate command exists, pass a sentinel like `'(per-Task acceptance assertions inline in plan)'` — the reviewer's PART 2.5 then runs the per-Task grep/test assertions instead of an aggregate command.
+- `thread_id` (optional but expected for retry/modify/6th-option resume): read from `.ohaze/current-ship.json`; used for exact `cd <worktree> && codex exec resume <thread_id>` (no `--cd`, no `--sandbox`).
+
+### Mode branching contract
+
+- **`mode='dispatch'`** (initial): enter at Phase 4 Step 1 (write prompt file → dispatch background → capture `thread_id` + `codex_bg_id` → persist → report and return).
+- **`mode='review'`** (re-entry after `state=codex_done` or `state=review_fail`): skip Phase 4 entirely. Enter at Phase 5.0 (Apply Codex's pending changes as commits) → Phase 5.1 (Compute diff) → Phase 5.2 (Dispatch reviewer) → Phase 5.3 (Write verdict) → Phase 6 (Retry loop if FAIL). Re-using the same codex thread for any retry dispatches (via `cd <worktree> && codex exec resume <thread_id>`).
+
+If `mode` is missing or invalid, default to `'dispatch'` and warn the user — strict validation isn't worth a hard fail here, but the warning ensures the caller knows the contract drifted.
 
 ## Phase 4: Dispatch Codex (`run_in_background`, full-access sandbox on the initial dispatch)
 
