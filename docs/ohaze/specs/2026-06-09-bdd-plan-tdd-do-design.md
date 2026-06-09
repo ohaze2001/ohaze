@@ -53,7 +53,9 @@ haze 当前用 ohaze 做 vibe coding,核心诉求是：
               ↓
   Phase 2   worktree + commit (brief + spec 都进 feat 分支)
               ↓
-  Phase 3   writing-plans (现状不动,plan 路径改 docs/ohaze/plans/)
+  Phase 3   writing-plans (Claude 写 plan,docs/ohaze/plans/)
+              ↓
+  Phase 3.5 plan 一句话摘要 → default-go (haze 可打断,默认自动进)
               ↓
   Phase 4-6 codex 实现 → Claude 审实现 → retry loop
               └─ retry fix prompt 加 <investigate_first> block (Iron Law)
@@ -150,13 +152,13 @@ spec 写作时引用 `file:line`,避免拍脑袋。
 
 ### 关键边界单点问触发条件(5 类)
 
-命中即用 `AskUserQuestion` 单点问(不开放对话):
+命中即用 `AskUserQuestion` 单点问(不开放对话)。**门槛拉高原则**:能 Claude 自决就自决,只在有 product impact 时才打扰 haze。
 
-1. 涉及外部 API(Shopify / Supabase / Vercel / 第三方)
-2. 涉及部署目标 / 上线影响
-3. 跟现有架构显著冲突(要重构现有抽象)
-4. 涉及成本 / 计费(增加 API 调用、长跑 job)
-5. 多个等价技术方案没有明显赢家
+1. 涉及外部 API(Shopify / Supabase / Vercel / 第三方)— 选用直接影响功能/成本/上线路径
+2. 涉及部署目标 / 上线影响 — 产品决策
+3. 跟现有架构显著冲突 — 仅当冲突会破坏 brief 里承诺的 scenario 时才问;纯重构判断 Claude 自决
+4. 涉及成本 / 计费(增加 API 调用、长跑 job)— 产品决策
+5. 多个技术方案有**明显 user-visible tradeoff**(成本 / 性能 / UX 等可被产品决策的差异)— 纯实现风格差异(用 lib A vs lib B 但功能等价)不问
 
 ### 输出
 
@@ -256,7 +258,12 @@ E) TECHNICAL DECISION CHALLENGE
 - Each issue must be tagged with one of: {AMBIGUITY, MISSING, CONFLICT,
   DRIFT, ALT-DECISION} and routed to one of: {fix-in-spec, ask-haze}.
   - fix-in-spec = Claude can resolve by editing the spec without user input
-  - ask-haze = need user (haze) to clarify requirement
+  - ask-haze = haze needs to decide on a product / scope / requirement
+    question. Prefer fix-in-spec for technical decisions. You MAY route a
+    technical decision to ask-haze ONLY when it has meaningful product
+    impact (affects a brief scenario, cost, UX, or external dependency).
+    Pure implementation-style choices (lib A vs lib B with same behavior,
+    internal naming, control flow shape) MUST be fix-in-spec.
 </constraints>
 
 <output_format>
@@ -295,6 +302,57 @@ zero IMPORTANT items. NICE-TO-HAVE items alone do NOT cause NEEDS-CLARIFICATION.
   - `fix-in-spec`:Claude 直接改 spec,**回到 Phase 1.6** 再审一遍
   - `ask-haze`:Claude 用 `AskUserQuestion` 把所有 `ask-haze` 类 issue 合并问 haze 一次(一个 question 最多 4 个 option 不够就分批),改 spec 后**回到 Phase 1.6**
 - **Loop max 2 轮** — 第 3 轮还有 issues 就 surface 给 haze 决定 "强制接受 / 改 brief / 砍 feature"
+
+---
+
+## Phase 3.5 — Plan 一句话摘要 + default-go(去掉 haze 'go' gate)
+
+### 为什么加这个 phase
+
+现有 `ohaze:writing-plans` 终态要求 haze reply 'go' 才进 Codex 实现 — 这意味着 plan 内容(`formatter.py:50-77 整段删`、`§3 Dead code 清理` 这种 Task 级别技术细节)会直接展示在 haze 面前,违反 vibe coding 诉求(haze 给的两张 ship 截图都印证了 plan/spec 内容**比 spec 还细**)。
+
+### 行为
+
+writing-plans 写完 plan 后:
+
+1. **Claude 自动生成 plan 摘要**(一句话级别),格式:
+   ```
+   📋 Plan 写好了 → docs/ohaze/plans/<file>.md
+      拆了 <N> 个 Task,大致涉及 <X / Y / Z 三块>(架构层面,不展开细节)。
+      准备进 Codex 实现,你可以打断(输入任意非 go 内容)或等待自动 go。
+   ```
+
+2. **default-go**:不等待 haze 明确 'go'。Claude 直接进 Phase 4(`ohaze:codex-executor` mode='dispatch')。
+
+3. **可打断机制**:haze 仍可以在摘要展示后立即打断 — 一旦 haze 在摘要展示后下一轮回了任何非 "go" / 非默认确认的内容,Phase 4 dispatch 取消,流程进 modify/cancel 分支(走 finishing skill 的 modify 子流程)。
+
+### 为什么不加 plan 异源审(选 option C 而非 A / B)
+
+讨论过 3 个 options:
+- A. Codex dry-run 审 plan(同源,不算严格异源)
+- B. Claude general-purpose subagent 审 plan(同 model 异源 prompt,弱异源)
+- **C. 不审 plan,直接 default-go(选这个)**
+
+选 C 的理由:
+1. plan 是 spec 的派生,spec 已经在 Phase 1.6 被 Codex 异源审过
+2. Phase 5 Claude 异源审实现是最后一道闸门 — 会真跑 `project_test_command`,plan 写歪了实现必然测试失败,自动进 Phase 6 retry loop
+3. A / B 都是双重保险,token 成本 + 等待时间增加,收益边际
+4. C 最贴 vibe coding 诉求
+
+升级路径:如果未来发现 plan 写歪概率高(observed pattern),从 C 升 A / B 不破坏现状,只是再加一个 thin wrapper skill(类似 `spec-to-codex-review` 的 `plan-to-codex-review`)。
+
+### 实施改动
+
+- `plugins/ohaze/skills/writing-plans/SKILL.md` — "Execution Handoff" 段去掉 "Wait for user's 'go'",改成"Output plan 摘要,handoff 给 ship.md Phase 3.5"
+- `plugins/ohaze/commands/ship.md` — Phase 3 调用 writing-plans 后,新增 Phase 3.5(生成摘要 + 自动调 Phase 4 dispatch),haze 仍可在摘要后下一轮打断
+
+### 失败模式
+
+| 模式 | 处理 |
+|---|---|
+| haze 打断,但没说清要改什么 | Claude 用 `AskUserQuestion` 单点问:revise plan / 砍 feature / 暂停 ship |
+| haze 没回任何东西(去喝咖啡了) | default-go 已经触发,Codex 实际上已在跑;haze 回来时 Phase 4-5 可能已完成,看 `/ohaze:status` 即可 |
+| Codex dispatch 失败 | 同现状 Phase 4 失败模式处理(`codex-executor` Phase 4 已有)|
 
 ---
 
@@ -359,8 +417,8 @@ zero IMPORTANT items. NICE-TO-HAVE items alone do NOT cause NEEDS-CLARIFICATION.
 | 文件 | 改什么 |
 |---|---|
 | `plugins/ohaze/skills/brainstorming/SKILL.md` | Phase 1 改造:7 类 forcing hints(灵活,不强制)、brief 模板、终态从 "design approved" → "brief approved"、不再写 spec |
-| `plugins/ohaze/commands/ship.md` | Phase 1 调用规则改;新增 Phase 1.5(spec 自动生成 + mandatory code-reading + 5 类单点问)、Phase 1.6(调 `spec-to-codex-review` + loop max 2);Phase 2 写 brief + spec 双文件;spec 路径 `docs/superpowers/specs/` → `docs/ohaze/specs/`;新增 brief 路径 `docs/ohaze/briefs/` |
-| `plugins/ohaze/skills/writing-plans/SKILL.md` | plan 路径 `docs/superpowers/plans/` → `docs/ohaze/plans/` |
+| `plugins/ohaze/commands/ship.md` | Phase 1 调用规则改;新增 Phase 1.5(spec 自动生成 + mandatory code-reading + 5 类单点问)、Phase 1.6(调 `spec-to-codex-review` + loop max 2);**新增 Phase 3.5**(plan 一句话摘要 + default-go,可打断);Phase 2 写 brief + spec 双文件;spec 路径 `docs/superpowers/specs/` → `docs/ohaze/specs/`;新增 brief 路径 `docs/ohaze/briefs/` |
+| `plugins/ohaze/skills/writing-plans/SKILL.md` | plan 路径 `docs/superpowers/plans/` → `docs/ohaze/plans/`;**"Execution Handoff" 段去掉 "Wait for user's 'go'"**,改成输出 plan 摘要并 handoff 给 ship.md Phase 3.5 |
 | `plugins/ohaze/skills/codex-executor/SKILL.md` | Phase 6 fix prompt 加 `<investigate_first>` block;引用 plan/spec 路径处同步更新 |
 | `plugins/ohaze/skills/finishing/SKILL.md` | 新增第 7 项 Security Review(conditional);引用路径同步更新 |
 | `plugins/ohaze/.claude-plugin/plugin.json` | version `2.0.0` → `2.1.0` |
