@@ -264,6 +264,13 @@ E) TECHNICAL DECISION CHALLENGE
     impact (affects a brief scenario, cost, UX, or external dependency).
     Pure implementation-style choices (lib A vs lib B with same behavior,
     internal naming, control flow shape) MUST be fix-in-spec.
+- Every issue MUST include `user_impact_description`. Use null only when
+  the issue is purely technical with no user-facing impact (robustness
+  edge cases observable to no user, micro-optimization, style). When
+  non-null, write in PRODUCT LANGUAGE: describe what user-facing function
+  is incomplete / broken / degraded. NEVER quote code identifiers,
+  function names, file paths, or technical jargon in this field —
+  those go in `problem`.
 </constraints>
 
 <output_format>
@@ -279,7 +286,8 @@ Return a single JSON object with this exact shape (no surrounding prose):
       "severity": "CRITICAL" | "IMPORTANT" | "NICE-TO-HAVE",
       "routing": "fix-in-spec" | "ask-haze",
       "evidence": "<file:line citation + quoted text>",
-      "problem": "<what's wrong>",
+      "problem": "<technical description>",
+      "user_impact_description": "<string in product language describing what user-facing function is incomplete/broken/degraded, OR null if purely technical with no user-facing impact>",
       "suggestion": "<concrete recommendation: either spec change text OR question to ask haze>",
       "confidence": <integer 7-10>
     }
@@ -406,6 +414,139 @@ writing-plans 写完 plan 后:
 
 ---
 
+## 审查输出产品语言翻译机制(统一适用全部 reviewer)
+
+### 为什么加
+
+haze 给的 ship 截图里,Phase 6.5 ADVERSARIAL 列表全是 `tests/test_run.py:228 传 [] 当 state 参数到 _write_trending_stream 而非 RunState` 这种纯技术描述。haze 反馈:
+
+> 不要告诉我技术上的问题,告诉我这个问题导致了什么功能没有实现完全。
+
+需要在 reviewer 输出和 haze 展示之间加一层**产品语言翻译**。**沿用现有评级**(CRITICAL / IMPORTANT / NIT / ADVERSARIAL / NICE-TO-HAVE),不引入新分级,只让每条 finding 自带产品语言描述。
+
+### 统一适用范围
+
+3 个 reviewer 全部适用:
+- Phase 1.6 `spec-to-codex-review`(Codex 审 spec)
+- Phase 5 codex-executor reviewer(Claude 审 Codex 实现)
+- Phase 7 第 7 项 Security review(OWASP/STRIDE)
+
+### Reviewer output schema 加字段
+
+每条 finding 必须额外输出 `user_impact_description`(string | null):
+
+- **string 形态**:用产品语言描述这个问题让**用户/调用者在 X 场景下 Y 功能不完整**。绝对不允许出现文件名、行号、函数名、变量名、技术 jargon
+- **null 形态**:纯技术问题,无 user-facing impact(robustness 边角、micro-optimization、style)
+
+示例:
+
+| 技术描述(reviewer 内部用) | user_impact_description |
+|---|---|
+| `record_error 吞 OSError 但不吞 UnicodeEncodeError` | "feeder 遇到非 UTF-8 字符时会崩溃中断,影响数据采集完整性" |
+| `_utc_timestamp 1 秒分辨率紧密循环里两条 errors 时间戳一致` | `null`(理论可能 dedup 影响,observed 极低) |
+| `finalize 无 try/except 包 mkdir/write_text` | "/logs 只读时,manifest 在最后一行崩,前面已完成的工作记录会丢失" |
+| `__main__.py:28 partial → exit 0` | "launchd 看不到失败信号,partial 故障在没人读 manifest 时不可见"(借用截图原文,已是产品语言可保留) |
+
+判定标准:**评级跟 user_impact_description 解耦**。CRITICAL 也可能 `user_impact_description = null`(纯技术 critical),ADVERSARIAL 也可能有 user-facing 描述。LLM 各自独立判断。
+
+### Claude 主线展示规则(基于评级 + user_impact_description)
+
+| 评级 | user_impact != null | user_impact == null |
+|---|---|---|
+| CRITICAL | 自动进 Phase 6 retry-fix(现状) | 自动进 Phase 6 retry-fix(现状) |
+| IMPORTANT | 同上 | 同上 |
+| ADVERSARIAL | 用 `user_impact_description` 展示给 haze 决策 | **默认 skip,落 detail.json**(纯技术不打扰 haze) |
+| NIT | 默认 skip,落 detail.json | 默认 skip,落 detail.json |
+| NICE-TO-HAVE | 默认 skip,落 detail.json | 默认 skip,落 detail.json |
+
+**关键规则**:
+- CRITICAL / IMPORTANT 自动修不变(无论是不是 user-facing,因为已经 block ship)
+- ADVERSARIAL 改变:**只展示 user-facing 的**,纯技术 ADVERSARIAL 默认 skip
+- NIT / NICE-TO-HAVE 永远 skip(无论 user-facing 与否)
+
+### 展示模板(haze 视野)
+
+```
+📋 Reviewer 审查完毕
+
+🔴 CRITICAL / IMPORTANT: <N> 条 — Codex 在 retry loop 修复中(无需 haze 介入)
+
+🟡 ADVERSARIAL (user-facing,需要你决策): <M> 条
+  1. <user_impact_description>
+     建议: fix(改 Y) / accept(接受这个 tradeoff)
+  2. ...
+
+🟢 已 skip 的纯技术细节: <K> 条
+   → 完整清单: .ohaze/findings-detail.json
+```
+
+ADVERSARIAL user-facing 走现有 finishing 第 6 项「修复对抗审查」流程,fix 路径不变,只是描述文本变成 user-facing 翻译。
+
+### 持久化 — `.ohaze/findings-detail.json`
+
+落点:`<worktree_path>/.ohaze/findings-detail.json`(每个 ship lifecycle 独立)
+
+Schema:
+```json
+{
+  "iteration": <number>,
+  "findings": [
+    {
+      "severity": "CRITICAL | IMPORTANT | NIT | ADVERSARIAL | NICE-TO-HAVE",
+      "evidence": "<file:line + quoted text>",
+      "technical_description": "<原始技术描述>",
+      "user_impact_description": "<string | null>",
+      "shown_to_user": <bool>,
+      "auto_handled": "retry-fix | skip | null"
+    }
+  ]
+}
+```
+
+`shown_to_user` 标记当时是否展示给 haze,`auto_handled` 标记 Claude 主线如何处理。haze 想看完整原始技术细节,随时 `cat .ohaze/findings-detail.json`(透明感保留)。
+
+### Phase 1.6 spec-to-codex-review prompt 模板修订
+
+`<output_format>` 段 issues item 加 `user_impact_description` 字段:
+
+```json
+{
+  "id": "<short slug>",
+  "category": "AMBIGUITY | MISSING | CONFLICT | DRIFT | ALT-DECISION",
+  "severity": "CRITICAL | IMPORTANT | NICE-TO-HAVE",
+  "routing": "fix-in-spec | ask-haze",
+  "evidence": "<file:line + quoted text>",
+  "problem": "<technical description>",
+  "user_impact_description": "<string | null>",
+  "suggestion": "<concrete recommendation>",
+  "confidence": <integer 7-10>
+}
+```
+
+`<constraints>` 段补一句:
+> Every issue MUST include `user_impact_description`. Use null only when
+> the issue is purely technical (no user-facing or scenario-level impact).
+> When non-null, write in product language: describe what user-facing
+> function is incomplete / broken / degraded, never quote code identifiers.
+
+### Phase 5 codex-executor reviewer template 修订
+
+review prompt 的 verdict output format 同步加 `user_impact_description` 字段(每条 issue 必填,纯技术写 null)。
+
+### Phase 7 Security review prompt 修订
+
+同上 — 每条 finding 必填 `user_impact_description`。Security finding 用产品语言重述 exploit scenario(不是"理论 XSS",而是"攻击者可在 X 流程下偷走用户 Y 数据")。
+
+### 失败模式
+
+| 模式 | 处理 |
+|---|---|
+| Reviewer 漏 `user_impact_description` 字段 | Claude 主线兜底:把 finding 标 `user_impact_description=null` 当纯技术处理(降级显示) |
+| Reviewer 把技术描述塞进 `user_impact_description`(违反约定) | Claude 主线启发式检测(含 `file:line` / `function_name` 等模式),发现违反 → 标 null 降级,警告日志 |
+| haze 想看技术细节 | `cat <worktree>/.ohaze/findings-detail.json` 永远有 |
+
+---
+
 ## 涉及文件改动清单
 
 ### 新建
@@ -419,17 +560,19 @@ writing-plans 写完 plan 后:
 | `plugins/ohaze/skills/brainstorming/SKILL.md` | Phase 1 改造:7 类 forcing hints(灵活,不强制)、brief 模板、终态从 "design approved" → "brief approved"、不再写 spec |
 | `plugins/ohaze/commands/ship.md` | Phase 1 调用规则改;新增 Phase 1.5(spec 自动生成 + mandatory code-reading + 5 类单点问)、Phase 1.6(调 `spec-to-codex-review` + loop max 2);**新增 Phase 3.5**(plan 一句话摘要 + default-go,可打断);Phase 2 写 brief + spec 双文件;spec 路径 `docs/superpowers/specs/` → `docs/ohaze/specs/`;新增 brief 路径 `docs/ohaze/briefs/` |
 | `plugins/ohaze/skills/writing-plans/SKILL.md` | plan 路径 `docs/superpowers/plans/` → `docs/ohaze/plans/`;**"Execution Handoff" 段去掉 "Wait for user's 'go'"**,改成输出 plan 摘要并 handoff 给 ship.md Phase 3.5 |
-| `plugins/ohaze/skills/codex-executor/SKILL.md` | Phase 6 fix prompt 加 `<investigate_first>` block;引用 plan/spec 路径处同步更新 |
-| `plugins/ohaze/skills/finishing/SKILL.md` | 新增第 7 项 Security Review(conditional);引用路径同步更新 |
+| `plugins/ohaze/skills/codex-executor/SKILL.md` | Phase 6 fix prompt 加 `<investigate_first>` block;引用 plan/spec 路径处同步更新;**Phase 5 reviewer prompt 加 `user_impact_description` 字段(产品语言翻译)+ `findings-detail.json` 持久化逻辑** |
+| `plugins/ohaze/skills/finishing/SKILL.md` | 新增第 7 项 Security Review(conditional);**第 6 项「修复对抗审查」展示模板改用 `user_impact_description`,纯技术 ADVERSARIAL 默认 skip**;引用路径同步更新 |
+| `plugins/ohaze/skills/spec-to-codex-review/SKILL.md` *(新建)* | output schema 已含 `user_impact_description` 字段(本 design 内的 prompt 模板已规划)|
+| `plugins/ohaze/commands/ship-review.md` | **第 6.5 项「Reviewer 提出的对抗式发现」展示模板改用 `user_impact_description`,过滤 user_impact_description==null 的 ADVERSARIAL** |
 | `plugins/ohaze/.claude-plugin/plugin.json` | version `2.0.0` → `2.1.0` |
 | `CLAUDE.md` / `README.md` / `ROADMAP.md` / `CHANGELOG.md` | 四件套同步:架构小节加 BDD/spec-review 流程;CHANGELOG 记 v2.1.0 |
-| `.gitignore` | `.ohaze/spec-review-verdict.json` 加白 |
+| `.gitignore` | `.ohaze/spec-review-verdict.json` + `.ohaze/findings-detail.json` 加白 |
 
 ### 不动
 
 - `plugins/ohaze/skills/using-git-worktrees/SKILL.md`
 - `plugins/ohaze/skills/plan-to-codex-prompt/SKILL.md`
-- `plugins/ohaze/commands/ship-review.md`, `ship-finish.md`, `status.md`
+- `plugins/ohaze/commands/ship-finish.md`, `status.md`
 
 ### 数据契约改动
 
