@@ -141,7 +141,7 @@ It handles **four classes** of document change (internalized from `neat`'s four-
 
 - Append an appropriate `[Unreleased]` or version entry to `CHANGELOG.md` at `main_repo_path`.
 - Bump the manifest `version` (`package.json` / `Cargo.toml` / `.claude-plugin/plugin.json` / etc.).
-- Tick the exact `linked_todo` line in the main project `CLAUDE.md` "当前主线" section (or wherever the `- [ ]` lives) from `- [ ]` to `- [x]`.
+- Tick the exact `linked_todo` line in the main project `ROADMAP.md` "## 当前主线" section from `- [ ]` to `- [x]` (matched by the exact todo text, stored in handoff per `ship.md` Step A). Per global four-piece contract dashboard checkboxes live in `ROADMAP.md`, not `CLAUDE.md`. If `linked_todo` is `null`, skip this sub-step silently.
 
 ### Class 2 — Drift repair (from review-verdict.json)
 

@@ -154,7 +154,11 @@ Then the main agent's turn ends. Phase 5/6/7 happen via re-invoke + `/ohaze:ship
 
 ### Step A — Link to a `linked_todo` (optional precision tick)
 
-Before writing the handoff, scan `<main_repo_path>/CLAUDE.md` for pending `- [ ]` todos. If any exist, use `AskUserQuestion` to let the user pick which one (or "无对应 todo") this ship corresponds to. Store the **exact todo text without the `- [ ] ` prefix** as `linked_todo` so `doc-finish` (in `ohaze:finishing`) can later tick it precisely. If no pending todos exist or the user picks "无对应", set `linked_todo: null` and proceed silently.
+Per the global four-piece contract (`~/CLAUDE.md`), the dashboard checkboxes live in **`ROADMAP.md` `## 当前主线`** (CLAUDE.md is for agent instructions, NOT for tracking todos). Scan `<main_repo_path>/ROADMAP.md`'s `## 当前主线` section for pending `- [ ]` lines.
+
+If any exist, use `AskUserQuestion` to let the user pick which one (or "无对应 todo") this ship corresponds to. Store the **exact todo text without the `- [ ] ` prefix** as `linked_todo` so `doc-finish` (in `ohaze:finishing`) can later tick it precisely **inside `ROADMAP.md` `## 当前主线`**. If no pending todos exist or the user picks "无对应", set `linked_todo: null` and proceed silently.
+
+Backward compatibility: if `ROADMAP.md` is absent (this is a 工作流项目 that only has `CLAUDE.md` — see §Pre-flight Step 4 project-type detection) OR `## 当前主线` section is missing, set `linked_todo: null` without scanning CLAUDE.md (no fallback — keeping todos out of CLAUDE.md is a contract, not a preference).
 
 ### Step B — Write the handoff file
 
