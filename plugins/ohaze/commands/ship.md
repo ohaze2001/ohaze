@@ -142,7 +142,7 @@ The executor:
 >
 > 想看进度: `BashOutput <codex_bg_id>` 读流式 --json 事件.
 >
-> 如果你 `/exit` 退出 session, harness 重启后跑 `/ohaze:ship-review` 续上 — `.ohaze/current-ship.json.state` 是幂等状态门,会从正确位置接续."
+> ⚠️ **请保持 session 不要 `/exit`**: 后台 codex 是当前 session 的子进程, `/exit` 会立即杀死它 (SIGHUP), 状态会永久卡在 `running`. v2.0.0 已显式放弃跨 session 韧性 (spec §3, A 方案: 无 ScheduleWakeup 兜底). 如果必须中断, 用 `Ctrl+C` 然后从 finishing 菜单 option 4 「先不处理」状态化暂停; 想完全丢弃跑 `git worktree remove --force <worktree>` 手动清理."
 
 **Do not call `ScheduleWakeup`.** v2 control flow relies entirely on harness re-invoke after `run_in_background` completion. No fallback wakeup is set — see spec §3 A-plan and `/ohaze:ship-review`'s state-gate for ghost-wake defense.
 
