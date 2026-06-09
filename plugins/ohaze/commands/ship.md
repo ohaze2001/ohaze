@@ -1,7 +1,7 @@
 ---
 description: End-to-end feature shipping. Brainstorm → worktree+spec → plan → Codex execute (run_in_background; harness re-invokes into /ohaze:ship-review on completion). v2.0.0 — zero runtime external skill deps, no vault, no ScheduleWakeup.
 argument-hint: "<feature description> [--project <abs-path>]"
-allowed-tools: Bash, Read, Write, Edit, Skill, Agent, AskUserQuestion
+allowed-tools: Bash, BashOutput, Read, Write, Edit, Skill, Agent, AskUserQuestion
 ---
 
 Orchestrate the ohaze v2 ship workflow for the user's request.

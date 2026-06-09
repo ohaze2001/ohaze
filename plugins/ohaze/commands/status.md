@@ -1,7 +1,7 @@
 ---
 description: Show ohaze workflow status across all worktrees of the current project — what's running, what's waiting for review, what's stale, what's done. Read-only.
 argument-hint: ""
-allowed-tools: Bash, Read
+allowed-tools: Bash, BashOutput, Read
 ---
 
 Render a consolidated status view of all ohaze workflows in the current git project. This command is **read-only** — it never modifies any worktree, handoff, or branch.
