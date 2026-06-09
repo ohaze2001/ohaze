@@ -1,117 +1,126 @@
 ---
-description: Resume an /ohaze:ship workflow after Codex finishes. Runs review loop (max 3 retries) then ohaze's 5-option finishing menu (with "继续修改" branch).
-argument-hint: "[--more] (optional: continue past the 3-retry limit)"
-allowed-tools: Bash, Read, Write, Edit, Skill, Agent, AskUserQuestion, ScheduleWakeup
+description: Resume an /ohaze:ship workflow (called by harness re-invoke after Codex background completes, or by the user manually). Idempotent state gate → review loop (max 3 retries with stuck-detection) → ohaze finishing menu (6 options; 6th appears only when ADVERSARIAL findings exist).
+argument-hint: "[--more] (optional: continue past the 3-retry cap)"
+allowed-tools: Bash, Read, Write, Edit, Skill, Agent, AskUserQuestion
 ---
 
-Continue the workflow started by `/ohaze:ship` after the background Codex run completes.
+Continue the workflow started by `/ohaze:ship`. This command is the **state-gate entry point** — it is safe to invoke at any time (the gate decides what to do). It is also what the harness lands in via re-invoke after a `run_in_background` Codex task completes.
 
 `$ARGUMENTS`
 
-## Pre-flight
+## Pre-flight — Idempotent state gate (唯一防幽灵唤醒/重入)
 
-1. Locate and read the handoff. `.ohaze/` lives inside the **worktree** (per `ship.md` Step B), not the main checkout. If the current `pwd` already contains `.ohaze/current-ship.json`, use it. Otherwise walk up from `pwd` to find a worktree with one. If still missing, tell user to run `/ohaze:ship` first.
+`.ohaze/` lives **inside the worktree** (per `ship.md` Step B), not the main checkout.
 
-   `cd` into the worktree for the rest of this command so all `.ohaze/*` paths resolve correctly and commits land in the right branch.
+### 1. Locate the handoff
 
-2. Verify Codex is actually done. Read `codex_pid_file` and `codex_log_file` from the handoff:
+- If the current `pwd` already contains `.ohaze/current-ship.json`, use it.
+- Otherwise, walk up from `pwd` looking for a `.ohaze/current-ship.json`.
+- If still not found, walk the parent repo's `git worktree list` for any worktree that has one.
 
-   ```bash
-   if [[ -f "$codex_pid_file" ]] && kill -0 "$(cat "$codex_pid_file")" 2>/dev/null; then
-     CODEX_ALIVE=1
-   else
-     CODEX_ALIVE=0
-   fi
-   ```
+If **no handoff exists** anywhere, this is a stray invocation (a ghost-wake into a long-finished ship, a misclicked `/ohaze:ship-review`, etc.) — print one short note and stop. **Do NOT prompt the user, do NOT start a new ship, do NOT error.**
 
-   **If Codex is still running (`CODEX_ALIVE=1`)**: do NOT exit. Re-schedule a wakeup and stop the turn:
+### 2. `cd` into the worktree
 
-   - Call `ScheduleWakeup(delaySeconds=600, reason="codex still running for <feature>, elapsed <N>m", prompt="/ohaze:ship-review")`.
-   - Tell the user: *"Codex 还在跑 (pid=<pid>, elapsed=<N>m). 已重新 schedule 10 分钟后再 check, 自动接 Phase 5. 你可以继续别的事, 不需要手动回来."*
-   - End the turn. The next wakeup re-enters this same Pre-flight Step 2.
+`cd <worktree_path>` so all `.ohaze/*` paths resolve correctly and any commits land on the right branch.
 
-   **If Codex is done (`CODEX_ALIVE=0`)**: check the tail of `<codex_log_file>` for the end-of-run report block. If the log shows an unhandled error, surface it and stop — do NOT proceed with review on incomplete work. Otherwise continue to Step 3 (and onward into Phase 5).
+### 3. Read `state` and act
 
-   Back-compat: older handoffs may have `codex_run_id` only (companion-issued task id). In that case fall back to `/codex:status <run_id>` — but those are legacy and shouldn't appear in new ships.
+Read `state` from `<worktree>/.ohaze/current-ship.json` and act per this table. **This is the only ghost-wake defense in v2** — no ScheduleWakeup is ever set, so the only way a stray re-invoke can do damage is by ignoring this gate.
 
-3. If `--more` flag is present in `$ARGUMENTS`, allow exceeding the 3-retry cap; otherwise honor it.
+| `state` value | Action |
+|---|---|
+| missing key, or file absent | Stop silently — handoff is gone, this is a stray. |
+| `done` or `discarded` | Stop silently — ship already finished. **Idempotent no-op.** This is what catches the wake-up that fires after a ship completed. |
+| `running` | Do nothing (Codex is still working). Tell the user "Codex 还在跑, harness 会在完成时自动再唤醒". End the turn. |
+| `codex_done` | Proceed to the review loop (Phase 5 below). The harness re-invoke after `run_in_background` completion should set this — but `codex_done` may also be set explicitly by `ohaze:codex-executor` Phase 5.0 just before review. |
+| `review_fail` | Proceed to retry (Phase 6 in `ohaze:codex-executor`). Retry counter is already in the handoff. |
+| `kept` | Tell the user the previous ship was paused via finish menu option 4 → suggest `/ohaze:ship-finish` to resume. End. |
+| `self-edit-pending` | Tell the user the previous ship was paused via finish menu option 5c → suggest `/ohaze:ship-finish` after their manual edits. End. |
 
-## Vault Context (pre-review read)
+> The gate eats ghost wake-ups, double `/ohaze:ship-review` invocations, and accidental re-invokes alike. There is no fallback `ScheduleWakeup` because dogfood (spec §3) proved harness re-invoke is reliable; A-plan: state gate is the only defense.
 
-Before invoking the reviewer, silently load vault context to give the review better grounding. Do NOT summarize to the user.
+### 4. (Optional) Verify Codex actually finished
 
-```bash
-PROJECT_NAME=$(basename $(git rev-parse --show-toplevel))
-VAULT="$HOME/Brain"
-PROJ_DIR="${VAULT}/20_Projects/${PROJECT_NAME}"
-```
+For belt-and-braces, read the tail of the background task's output via `BashOutput <codex_bg_id>` (handoff field `codex_bg_id`). Look for the final `message` event in the `--json` stream, or an unhandled error. If output suggests Codex died mid-run, surface the error and stop — do NOT run review on incomplete work.
 
-4. Read vault context (best-effort — skip silently if files don't exist):
-   - `${PROJ_DIR}/decisions/` — the 3 most recent decision files: understand what patterns or standards have already been decided for this project, so the reviewer can flag violations
-   - `${VAULT}/99_System/Logs/decision-patterns.md` — user's implicit preferences around code quality, commit style, and architecture
+(There is no `codex_pid_file` / `kill -0` check anymore — `run_in_background` task lifecycle is fully owned by the harness.)
 
-   Pass this context to the reviewer subagent (include it in the review prompt under a `<vault_context>` block). The reviewer should use it to:
-   - Flag if the implementation contradicts a past project decision
-   - Apply the user's coding preferences as additional quality criteria
+### 5. `--more` flag
 
-## Phase 5-6 — Review + Retry Loop (ohaze)
+If `--more` is present in `$ARGUMENTS`, allow the review-fix loop to exceed the 3-retry cap. Otherwise honor it.
 
-4. Invoke `ohaze:codex-executor` skill in **review mode**:
-   - Pass: `plan_path`, `base_ref`, `worktree_path` from the handoff file
-   - The skill runs Phase 5.0 first (auto-commit any pending changes Codex left behind)
-   - Then Phase 5.1 (compute diff) and Phase 5.2 (dispatch reviewer subagent)
-   - On FAIL, the skill loops: format issues → `codex exec resume <codex_session_id>` → re-review (up to 3 times; warned fallback only if the session id is missing)
-   - Update `.ohaze/current-ship.json` `retries` counter after each iteration
+## Phase 5–6 — Review + Retry Loop (delegated to `ohaze:codex-executor`)
 
-5. If after the loop the verdict is still FAIL and `--more` was not passed, the executor stops and presents 3 options to the user:
-   - Continue retrying (`/ohaze:ship-review --more`)
-   - Manually intervene (user fixes issues themselves) → tell user worktree path, exit
-   - Accept current state and proceed to finishing → continue to Phase 7
+Invoke `ohaze:codex-executor` in **review mode** with:
 
-   Wait for user choice.
+- `plan_path`, `spec_path`, `base_ref`, `worktree_path`, `main_repo_path`: from the handoff
+- `thread_id`: from the handoff (used by retry's `codex exec resume <thread_id>` — no `--sandbox`)
+- `project_test_command`: from the handoff (or re-detect from project files if absent)
+
+The executor:
+
+1. Phase 5.0 — auto-commit any pending changes Codex left behind (Codex by convention does not self-commit; see `plan-to-codex-prompt` `<commit_handling>`).
+2. Phase 5.1 — compute `git diff <base_ref>...HEAD` for the reviewer.
+3. Phase 5.2 — dispatch a `general-purpose` subagent for cross-source adversarial review with real test run (verification-before-completion internalized). The reviewer MUST be `general-purpose` — different model family from Codex by design.
+4. Phase 5.3 — write `<worktree>/.ohaze/review-verdict.json` with `verdict`, `issues[]` (CRITICAL/IMPORTANT/ADVERSARIAL preserved), `doc_drift[]`.
+5. On FAIL, the executor loops: stuck-detection diagnosis → format fix prompt → `codex exec resume <thread_id>` (re-dispatched via `run_in_background`, no `--sandbox`) → re-review (up to 3 iterations; warned `--last` fallback only if `thread_id` is missing).
+6. Update `.ohaze/current-ship.json.retries` after each iteration.
+
+If after 3 retries the verdict is still FAIL and `--more` was not passed, the executor stops and presents 3 options:
+
+1. Continue retrying (`/ohaze:ship-review --more`)
+2. Manually intervene (user fixes issues themselves) → tell user worktree path, exit
+3. Accept current state and proceed to finishing → continue to Phase 7
+
+Wait for user choice.
 
 ## Phase 6.5 — Surface ADVERSARIAL findings (if any)
 
-Before the finishing menu, check whether the latest review's `issues` array (in the verdict you just received from codex-executor, or read back from `.ohaze/review-verdict.json`) contains any lines prefixed `ADVERSARIAL:`.
+Before the finishing menu, check `<worktree>/.ohaze/review-verdict.json.issues` for entries prefixed `ADVERSARIAL:`.
 
 If yes, print them verbatim to the user **without commentary**:
 
 ```
-⚠️ Reviewer 提出的对抗式发现（不阻塞 ship, 设计层判断, 你来决定要不要处理）：
+⚠️ Reviewer 提出的对抗式发现 (不阻塞 ship, 设计层判断, 你来决定要不要处理):
 
   - ADVERSARIAL: <design risk> — <file:line>
   - ADVERSARIAL: <design risk> — <file:line>
+
+如要批量修复后再收尾, finishing 菜单会出现「修复对抗审查后收尾」项 (仅当有 ADVERSARIAL 时存在).
 ```
 
-Then proceed to Phase 7. Do not auto-loop into modify — the user will pick option 5 if they want to act on these.
+Then proceed to Phase 7. Do not auto-loop into modify — the user decides whether to act on ADVERSARIAL items via the 6th finishing menu option.
 
 If no ADVERSARIAL findings, skip this section silently.
 
 ## Phase 7 — Invoke `ohaze:finishing`
 
-Once review verdict is PASS (or user accepted current state in step 5), invoke the `ohaze:finishing` skill. Pass the full finishing context from `.ohaze/current-ship.json` and the latest verdict path:
+Once review verdict is PASS (or the user accepted current state above), invoke the `ohaze:finishing` skill. Pass the full finishing context from `.ohaze/current-ship.json` and the latest verdict path:
 
 - `worktree_path`
+- `main_repo_path`
 - `base_ref`
 - `branch`
 - `plan_path`
 - `spec_path`
 - `retries`
 - `linked_todo`
-- `codex_session_id`
+- `thread_id` (for modify sub-flow / 6th-option ADVERSARIAL fix; resume without `--sandbox`)
 - `review_verdict_path`: `<worktree_path>/.ohaze/review-verdict.json`
 
-The finishing skill owns Phase 7: project-type detection, recommended finish chain, document finish, terminal result files, cleanup ordering, and the modify sub-flow.
+The finishing skill owns: project-type detection, recommended finish chain, document finish (with neat-style routing internalized), the 6-option menu (6th option appears only when ADVERSARIAL findings exist), terminal result cleanup, and the modify sub-flow.
 
 ## Failure Modes
 
-- `<codex_log_file>` tail shows Codex genuinely failed (not just incomplete): surface the error verbatim; do NOT enter review loop. Suggest the user run an exact `codex exec resume <codex_session_id> --sandbox danger-full-access --cd <worktree>` manually with a corrective prompt, or warn before using the `--last` fallback if the session id is absent.
-- Reviewer subagent returns malformed verdict twice: fall back to asking user to read `git diff` and judge.
+- Background Codex genuinely failed (the `--json` stream tail shows an unhandled error, not just incomplete output): surface the error verbatim; do NOT enter review loop. Suggest the user re-run `codex exec resume <thread_id> --cd <worktree> --json` (NOT `--sandbox` — sandbox is fixed at initial dispatch) manually with a corrective prompt, or warn before using the `--last` fallback if `thread_id` is absent.
+- Reviewer subagent returns malformed verdict twice: fall back to asking the user to read `git diff` and judge.
 - Handoff file references a worktree path that no longer exists: stop, surface, ask user.
-- Push fails (no remote, auth missing): surface error, hand back to menu (don't auto-retry).
+- Push fails (no remote, auth missing): not this skill's problem — `ohaze:finishing` owns push/PR and surfaces those errors itself.
 
 ## Notes
 
-- The 5-option menu is owned by `ohaze:finishing`; we do NOT invoke `superpowers:finishing-a-development-branch`. This avoids menu duplication and keeps modify-flow inside the same orchestration.
-- Modify loop iterations don't count against the 3-retry review cap — they're user-initiated, not reviewer-driven.
-- After modify branches 5a (Codex) or 5b (Claude), finishing always returns to the menu.
+- The 6-option finishing menu is owned by `ohaze:finishing` (not duplicated here). The 6th option ("修复对抗审查后收尾") only appears when the verdict contained ADVERSARIAL findings. The modify-flow stays inside `ohaze:finishing`.
+- Modify-loop iterations don't count against the 3-retry review cap — they're user-initiated, not reviewer-driven.
+- After modify branches (Codex / Claude / self-edit), finishing always returns to the menu.
+- This command does NOT call `ScheduleWakeup` and does NOT poll pid files. v2 control flow = `run_in_background` + harness re-invoke + idempotent state gate.
