@@ -47,7 +47,7 @@ Skip git commits — see <commit_handling> below.
 </completeness_contract>
 
 <commit_handling>
-ohaze keeps commit authority at the orchestrator (Claude main session) by convention, not because of sandbox. You technically have permission to `git add` / `git commit` under `danger-full-access`, but **do NOT do it**. The orchestrator commits per-Task using a consistent message style, sometimes splits commits across Tasks based on file overlap, and integrates the commits into the vault-adapter discussions log. Self-committing breaks this pipeline.
+ohaze keeps commit authority at the orchestrator (Claude main session) by convention, not because of sandbox. You technically have permission to `git add` / `git commit` under `danger-full-access`, but **do NOT do it**. The orchestrator commits per-Task using a consistent message style and sometimes splits commits across Tasks based on file overlap. Self-committing breaks this consistency.
 
 For every Task's commit step in the plan: skip the actual `git` command. Consider the Task done as long as the code/test changes are written and verification passed.
 
