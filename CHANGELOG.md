@@ -19,9 +19,57 @@
 ### Removed
 
 ### Planned
-- **2.0.0** — tool-router（按任务复杂度自动路由 Codex / Claude / Gemini / DeepSeek）
+- **2.1.0** — 集成验证 dogfood + 上游 fork 基线漂移监控（详见 ROADMAP.md Backlog）
+- **未来某版** — tool-router（按任务复杂度自动路由 Codex / Claude / Gemini / DeepSeek，从 v1.x Planned 顺延，待 v2 稳定后重启评估）
 
 ### Backlog
+
+---
+
+## [2.0.0] — 2026-06-09
+
+**主题**：零运行时外部 skill 依赖 + vault 流程层剥离 + 修核心控制流坑（nohup/ScheduleWakeup 幽灵唤醒、resume sandbox、cwd 悬空）。**break 级重构**。
+
+### Added
+- **fork brainstorming**（自 superpowers v5.1.0，MIT）进 `plugins/ohaze/skills/brainstorming/`：砍 visual companion，改终止状态为「设计获批」（不写 spec、不 invoke writing-plans）
+- **fork using-git-worktrees**（自 superpowers v5.1.0，MIT）进 `plugins/ohaze/skills/using-git-worktrees/`：保留 Step 0/1/3/4 + 新增「Removing a Worktree Safely」teardown 章节（删前必 `cd "$main_repo_path"`） + `main_repo_path` 捕获契约
+- **codex-executor 实跑验证（PART 2.5）**：审查者必须真跑 `project_test_command` 并量化输出（内化 verification-before-completion）
+- **codex-executor retry 卡住升级**：连续 FAIL 同类 issue 时识别 plan 问题 vs 执行问题，不盲烧 retry（内化 systematic-debugging）；fix prompt 加 `<anti_regression>` 块防震荡
+- **finishing 第 6 项「修复对抗审查后收尾」**：仅当 review-verdict.json.issues 含 ADVERSARIAL 时出现，给设计层风险结构化修复入口
+- **doc-finish 内化 neat 完整路由（4 class）**：CHANGELOG/version/linked_todo + drift 修复 + 待办→ROADMAP Backlog/Bug + 架构→README+CLAUDE
+- **幂等状态门**：`/ohaze:ship-review` 与 `/ohaze:ship-finish` 第一步读 `.ohaze/current-ship.json.state` 查 7 状态表，是 v2 唯一的防幽灵唤醒/重入手段
+- **显式项目路径参数** `--project <abs-path>` 锁定目标项目（不靠 `pwd` detect，harness 会重置 cwd）
+- **Pre-flight 四件套完备性检查**（内化 md-init）：缺则按项目类型补，齐则跳过
+
+### Changed
+- **流程序调整**：brainstorm（主仓内文本对话，不落档）→ 建 worktree → 在 worktree 内写 spec 并 commit。main 全程干净，并行多 ship 不互相污染 ff-merge
+- **codex dispatch 改 `Bash(run_in_background:true)`**：去 `nohup` / `&` / `> log 2>&1` / `pid_file`；harness 自动 re-invoke 替代 ScheduleWakeup 轮询
+- **codex exec resume 命令去 `--sandbox`**：codex 0.137 不支持，sandbox 继承自初始 dispatch（修旧实现 bug）
+- **handoff schema 精简**：新增 `state` / `thread_id` / `codex_bg_id` / `main_repo_path` / `slug`；删 `codex_session_id` / `codex_run_id` / `codex_job_id` / `codex_pid_file` / `codex_log_file` / `codex_thread_resume` / `started_at`
+- **异源审查写死**：审查 subagent 必须 `general-purpose`（继承 Opus），刻意异于 Codex；禁改 codex 自审 / `codex exec review`
+- **status 命令 state-first 判定**：用 handoff `state` 字段查表，不再 `kill -0 pid` / `ps -p`
+- **finishing 菜单 5 → 6 项**（第 6 项 conditional）
+- **plugin.json**：version 1.9.2 → 2.0.0；description 改自包含口径；keywords 移除 superpowers，新增 adversarial-review
+
+### Fixed
+- **`codex exec resume` 错误带 `--sandbox`**：原 `codex-executor` 第 280 行残留 v1 实现 bug，v2 全面修复（含 retry / modify 5a / 第 6 项 ADVERSARIAL 修复）
+- **资源浪费的 ScheduleWakeup 二次唤醒**：v1 完成后未取消 ScheduleWakeup 仍到点执行（haze 提报）；v2 不设兜底唤醒，幂等状态门吃掉任何重入，从源头杜绝
+
+### Removed
+- **vault 镜像流程层耦合**：
+  - 删 `plugins/ohaze/hooks/hooks.json`
+  - 删 `plugins/ohaze/adapters/vault-adapter.sh`（836 行）
+  - 删根 `VAULT-CONTEXT.md`
+- **删 ScheduleWakeup 整套机制**（A 方案）：`ship.md` Auto-resume 段、`ship-review.md` 重排逻辑、相关 `allowed-tools` 字段
+- **删 `ship-result.json` + `.vault-sync-state.json` 机制**：纯 vault hook 触发器，剥离后 finishing 主线程直接收尾
+- **删「必须用 Write 触发 vault hook」硬约束**：仍可用 Write（结构化、防转义），但理由不再是 hook
+- **删 `## Vault Context` 段**（`ship.md` / `ship-review.md` / `ship-finish.md` 各一段，pre-brainstorm/review/finish 的 `~/Brain` decisions/discussions 注入）
+- **删 `merge` 步骤的 `PRE_MERGE_COMMITS` / `PRE_MERGE_COUNT` 预计算**：vault-adapter `commits=0` 工件随 vault 剥离消失
+- **运行时不再依赖 superpowers 插件已装**（仍可用作 fork 基线参考）
+
+### Migration
+- 升级到 v2 后，旧 `.ohaze/current-ship.json` 含 v1 字段（`codex_pid_file` 等）的 handoff 会被 `/ohaze:status` 标为「legacy v1 handoff detected」并跳过 v1 字段；建议旧 ship 完成后再升级，或手动清掉残留 handoff
+- 若同时装了 `superpowers` 插件，v2 ohaze 仍正常工作，但 ship 流程不再调用 `superpowers:*` —— 全部走 `ohaze:*` 自持版
 
 ---
 
