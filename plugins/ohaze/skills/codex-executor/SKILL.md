@@ -288,20 +288,25 @@ Track retry counter starting at 0; persist in `.ohaze/current-ship.json.retries`
      </verification_loop>
      ```
 
-  4. Read `thread_id` from `.ohaze/current-ship.json`. Write the fix prompt to `<worktree_path>/.ohaze/codex-fix-iter<N>.xml` via Write tool, then dispatch:
+  4. Read `thread_id` from `.ohaze/current-ship.json`. Write the fix prompt to `<worktree_path>/.ohaze/codex-fix-iter<N>.xml` via Write tool, then dispatch.
+
+     **Command — `codex exec resume` flag asymmetry vs initial dispatch (verified against codex 0.137):**
+     - `codex exec resume` does **NOT** accept `--cd` (only top-level `codex exec` does). Empirical: `codex exec resume --help` does not list `-C/--cd`; passing it errors `unexpected argument '--cd'`. So we change working directory in the shell BEFORE invoking resume.
+     - `codex exec resume` does **NOT** accept `--sandbox`. Sandbox is fixed at the initial `codex exec` and inherited by every resume; passing `--sandbox` to `resume` is rejected by codex 0.137.
+
+     Dispatch via `Bash(run_in_background: true)`:
 
      ```bash
-     codex exec resume <thread_id> \
-       --cd <worktree_path> \
+     cd <worktree_path> && codex exec resume <thread_id> \
        --json \
        < <worktree_path>/.ohaze/codex-fix-iter<N>.xml
      ```
 
-     **`codex exec resume` MUST NOT include `--sandbox`.** The sandbox is fixed at the initial `codex exec` and inherited by every resume; passing `--sandbox` to `resume` is rejected by codex 0.137. (This was a real bug in the pre-v2 implementation.)
+     **Capture the new `codex_bg_id`** returned by `Bash(run_in_background)` and **immediately update `.ohaze/current-ship.json.codex_bg_id`** via Write tool, replacing the prior dispatch's id. Every retry / modify / 6th-option resume returns a fresh background task id; downstream consumers (Phase 5.0 report extraction, `/ohaze:status` deep inspect, doc-finish 真相源, ship-review Step 3a liveness check) read this field and would otherwise hit a dead/old stream.
 
-     Dispatch via `Bash(run_in_background: true)` again so the harness re-invokes the main agent on completion — same control-flow shape as Phase 4. The orchestrator does not wait synchronously.
+     Dispatching via `Bash(run_in_background: true)` lets the harness re-invoke the main agent on completion — same control-flow shape as Phase 4. The orchestrator does not wait synchronously.
 
-     If `thread_id` is missing or `null`: print and append a prominent warning to the user — `WARNING: thread_id 缺失,resume 退化为 --last,并行 ship 下不精确` — only then dispatch the fallback `codex exec resume --last --cd <worktree_path> --json` (still no `--sandbox`).
+     If `thread_id` is missing or `null`: print and append a prominent warning to the user — `WARNING: thread_id 缺失,resume 退化为 --last,并行 ship 下不精确` — only then dispatch the fallback `cd <worktree_path> && codex exec resume --last --json < <fix prompt>` (still no `--cd`, no `--sandbox`). Same `codex_bg_id` capture-and-persist rule applies.
 
      If exact resume fails to find the prior thread (rare — codex was restarted between sessions, or the rollout file was rotated): fall back to a fresh `codex exec` with a `<task>` that embeds both the original goal (re-read from the saved prompt file) and the fix delta. Note this in the retry log so the reviewer knows context may have been lost.
 
@@ -343,5 +348,5 @@ If a bug is found after finishing completes, start a **新 fix ship** with a new
 - **Reviewer subagent returns malformed verdict**: re-dispatch the reviewer once with stricter format guidance. If it fails again, fall back to asking the user to read `git diff` and decide.
 - **Real test command unknown**: stop and ask the user. Do NOT guess `npm test` for a project that has no `package.json`; the spec's verification-before-completion requirement demands a real command.
 - **Exact `codex exec resume <thread_id>` fails to find prior thread**: fall back to fresh `codex exec` with combined "original task + fix delta" prompt. Note in the retry log so the reviewer knows context may have been lost.
-- **`thread_id` missing**: log `WARNING: thread_id 缺失,resume 退化为 --last,并行 ship 下不精确`, then and only then use fallback `codex exec resume --last` (no `--sandbox`).
+- **`thread_id` missing**: log `WARNING: thread_id 缺失,resume 退化为 --last,并行 ship 下不精确`, then and only then use fallback `cd <worktree_path> && codex exec resume --last --json` (no `--cd`, no `--sandbox`). Capture and persist the new `codex_bg_id` as with any other resume.
 - **Stuck loop (same issues iter after iter)**: trigger the Phase 6 stuck-detection diagnosis — do not blindly burn retries 2 and 3.

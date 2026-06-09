@@ -93,24 +93,25 @@ This option only appears in the menu when the latest `review-verdict.json.issues
 
 3. **Write** the prompt to `<worktree_path>/.ohaze/codex-adversarial-fix.xml` via Write tool.
 
-4. **Dispatch** via `Bash(run_in_background: true)` (same pattern as Phase 4 / Phase 6):
+4. **Dispatch FOREGROUND** (not `run_in_background`). The user is engaged at the menu — they expect the fix to finish before continuing. More importantly: skills cannot be resumed mid-execution across a `run_in_background` turn boundary, so a backgrounded dispatch here would leave steps 5-8 (commit / re-review / finish chain) unreachable after the harness re-invoked into a slash command at top level. Foreground keeps the finishing skill alive for the entire mini-loop.
 
    ```bash
-   codex exec resume <thread_id> \
-     --cd <worktree_path> \
+   cd <worktree_path> && codex exec resume <thread_id> \
      --json \
      < <worktree_path>/.ohaze/codex-adversarial-fix.xml
    ```
 
-   `codex exec resume` MUST NOT include `--sandbox` (codex 0.137 rejects it; sandbox is inherited from initial dispatch). If `thread_id` is missing, fall back to `codex exec resume --last` with a prominent WARNING (same fallback rule as the retry loop).
+   Command flag asymmetry (verified against codex 0.137):
+   - `codex exec resume` does **NOT** accept `--cd` (only top-level `codex exec` does). Change directory in the shell first.
+   - `codex exec resume` does **NOT** accept `--sandbox`. Sandbox is inherited from the initial dispatch.
 
-5. **Wait for harness re-invoke** (same control flow as the rest of v2 — no ScheduleWakeup, no polling).
+   If `thread_id` is missing, fall back to `cd <worktree_path> && codex exec resume --last --json < <fix prompt>` with a prominent WARNING (same fallback rule as `ohaze:codex-executor` Phase 6).
 
-6. **Auto-commit Codex's changes** via `ohaze:codex-executor` Phase 5.0 (same as retry / modify).
+5. **Auto-commit Codex's changes** via `ohaze:codex-executor` Phase 5.0 (same as retry / modify).
 
-7. **Re-run review** (asked, not automatic — give the user a choice "要复验吗?"). Re-review does NOT increment the retry counter (user-initiated, not reviewer-driven). If FAIL on re-review, loop back to the menu so the user can decide next steps. If PASS (or skipped), proceed to the chosen finish chain.
+6. **Re-run review** (asked, not automatic — give the user a choice "要复验吗?"). Re-review does NOT increment the retry counter (user-initiated, not reviewer-driven). If FAIL on re-review, loop back to the menu so the user can decide next steps. If PASS (or skipped), proceed to the chosen finish chain.
 
-8. **Then execute the finish chain** (whatever the user picks afterward — recommended or custom).
+7. **Then execute the finish chain** (whatever the user picks afterward — recommended or custom).
 
 ## Chain Execution Contract
 
@@ -300,20 +301,21 @@ After applying, run `{project_test_command}` (or the per-Task acceptance asserti
 </action_safety>
 ```
 
-Write to `<worktree_path>/.ohaze/codex-modify.xml` via Write tool. Then dispatch:
+Write to `<worktree_path>/.ohaze/codex-modify.xml` via Write tool. Then dispatch **FOREGROUND** (same reasoning as the 6th-option mini-loop — user is engaged, and skills cannot be resumed mid-execution across a `run_in_background` turn boundary):
 
 ```bash
-codex exec resume <thread_id> \
-  --cd <worktree_path> \
+cd <worktree_path> && codex exec resume <thread_id> \
   --json \
   < <worktree_path>/.ohaze/codex-modify.xml
 ```
 
-**No `--sandbox`** — sandbox is inherited from the initial dispatch and `codex exec resume` rejects the flag.
+Command flag asymmetry (verified against codex 0.137):
+- `codex exec resume` does **NOT** accept `--cd` (only top-level `codex exec` does). Change directory in the shell first.
+- `codex exec resume` does **NOT** accept `--sandbox`. Sandbox is inherited from the initial dispatch.
 
-Dispatch via `Bash(run_in_background: true)` so the harness re-invokes the main agent on completion (same control flow as everywhere else in v2). If `thread_id` is missing, fall back to `codex exec resume --last` with a prominent WARNING.
+If `thread_id` is missing, fall back to `cd <worktree_path> && codex exec resume --last --json < <modify prompt>` with a prominent WARNING.
 
-After harness re-invokes and Codex returns, run `ohaze:codex-executor` Phase 5.0 to commit pending changes with a message derived from `change_description`. Then ask whether to re-run review. Re-review does NOT increment the retry counter (user-initiated, not reviewer-driven). Loop back to the finishing menu.
+After Codex returns (foreground), run `ohaze:codex-executor` Phase 5.0 to commit pending changes with a message derived from `change_description`. Then ask whether to re-run review. Re-review does NOT increment the retry counter (user-initiated, not reviewer-driven). Loop back to the finishing menu.
 
 ### 5b — Claude 主线程直接改
 
