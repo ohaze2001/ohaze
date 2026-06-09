@@ -71,6 +71,8 @@ Invoke `ohaze:brainstorming` (the self-hosted fork). Pass the feature descriptio
 - Capture the **approved design content** from the conversation — you will write it to a spec file in Phase 2 after the worktree exists.
 - Also capture a short **feature slug** (kebab-case, ≤ 4 words, e.g. `2fa-login`, `accordion-ui`, `v2-refactor`). This becomes both the branch name suffix and the spec filename suffix. You may derive it from `$ARGUMENTS` or ask the user once if ambiguous.
 
+> **Phase 1 → Phase 2 hand-off invariant (load-bearing):** When brainstorming declares "design approved", the orchestrator MUST proceed to Phase 2a **in the same assistant turn** — the declaration is a return-from-subroutine signal, NOT a wait-for-user signal. The user has nothing to input (they already approved); ending the turn here strands the flow and forces the user to nudge ("卡住了？") to resume. If you find yourself wanting to stop after seeing "Design approved", that is the bug — proceed directly to the Phase 2a `Skill(ohaze:using-git-worktrees)` invocation.
+
 ## Phase 2 — Worktree + write spec (worktree-first; spec lands on feat branch, main stays clean)
 
 ### 2a. Create the worktree

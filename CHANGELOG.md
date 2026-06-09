@@ -15,6 +15,7 @@
 ### Changed
 
 ### Fixed
+- **brainstorming → ship Phase 2 hand-off 卡死（dogfood 实测）**：`brainstorming/SKILL.md` 终止协议写 "Then STOP"，LLM 把它当对话默认意（end of turn = 等用户），在 "Design approved" 之后停下来不进 Phase 2a，要 haze 戳「卡住了？」才回神。根因是 ohaze fork 把上游 brainstorming 的「自己钻进下一个 skill」改成「declare approved + hand back to caller」时，hand-off 的「立即返回 + 同 turn 继续」语义没有显式协议化。修复：`brainstorming/SKILL.md` 终止段加「return-from-subroutine signal, NOT end-of-turn signal」明文 + `commands/ship.md` Phase 1 末尾加 Phase 1→2 hand-off invariant。
 
 ### Removed
 

@@ -108,12 +108,14 @@ Fix any issues in conversation. Do not write a separate review file.
 
 > "Design approved. Handing back to /ohaze:ship Phase 2 — it will set up the worktree and write this design to a spec file inside the worktree."
 
-Then STOP. The caller (`/ohaze:ship`) will:
+**This "Handing back" is a return-from-subroutine signal, NOT an end-of-turn signal.** Your very next action in the SAME assistant turn MUST be the Phase 2a `Skill(ohaze:using-git-worktrees)` invocation from `/ohaze:ship`. Do NOT end the turn. Do NOT wait for the user to type anything (they have nothing to type — they already approved). If you find yourself stopping after the "Design approved" line, you are misreading the protocol — this skill returns control to the orchestrator, it does not yield the turn to the user.
+
+The caller (`/ohaze:ship`) will then:
 - Create the worktree (`ohaze:using-git-worktrees`)
 - Write the approved design to `docs/superpowers/specs/<date>-<slug>-design.md` and commit it on the feature branch
 - Invoke `ohaze:writing-plans` to produce the implementation plan
 
-You do not perform any of those steps. **Do not write the spec file. Do not invoke writing-plans.**
+You do not perform any of those steps. **Do not write the spec file. Do not invoke writing-plans.** But you DO immediately proceed to Phase 2a in the same turn — that is the whole point of "handing back."
 
 ## Key Principles
 
