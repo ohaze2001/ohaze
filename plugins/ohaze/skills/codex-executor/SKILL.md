@@ -1,16 +1,17 @@
 ---
 name: codex-executor
-description: Use when ohaze workflow needs to dispatch a plan to Codex and run the post-execution review loop. Owns the Codex hand-off and the up-to-3-retry review-fix cycle.
+description: Use when the ohaze workflow needs to dispatch a plan to Codex and run the post-execution adversarial review loop. Owns Codex dispatch (run_in_background, thread_id capture, no nohup), cross-source review (general-purpose subagent + real test run), and the up-to-3-retry review-fix cycle with stuck-detection upgrade.
 ---
 
-# Codex Executor
+# Codex Executor (ohaze)
 
-Hand a translated XML prompt to Codex via the `codex` plugin, then run the Claude-side review loop. Owns Phases 4-6 of `/ohaze:ship`.
+Hand a translated XML prompt to Codex via the `codex` CLI, then run the Claude-side cross-source review loop. Owns Phases 4–6 of `/ohaze:ship`.
 
 ## When to invoke
 
 - Inside `/ohaze:ship` after `ohaze:plan-to-codex-prompt` produces an XML prompt.
-- Inside `/ohaze:ship-review` to resume the review-fix loop after a `--background` Codex run completes.
+- Inside `/ohaze:ship-review` (after the harness re-invokes the main agent because the background Codex run completed) to run the review-fix loop.
+- Inside `ohaze:finishing` Step 5a (modify sub-flow) or Step 6 (修复对抗审查后收尾) to dispatch a follow-up fix.
 
 ## Inputs
 
@@ -18,14 +19,12 @@ Hand a translated XML prompt to Codex via the `codex` plugin, then run the Claud
 - `plan_path` (required): the absolute path to the plan markdown, used by the reviewer.
 - `base_ref` (required): the git ref Codex's work started from (typically the worktree's parent branch, e.g. `main`).
 - `worktree_path` (required for review/retry): the ship worktree path.
-- `codex_session_id` (optional but expected): read from `.ohaze/current-ship.json`; used for exact `codex exec resume <codex_session_id>`.
-- `mode` (optional, default `--background`): either `--background` or `--wait`.
+- `project_test_command` (required for review): the command the reviewer runs to verify behavior (e.g. `npm test`, `pytest`).
+- `thread_id` (optional but expected for retry): read from `.ohaze/current-ship.json`; used for exact `codex exec resume <thread_id>`.
 
-## Phase 4: Dispatch Codex (direct `codex exec`, full-access sandbox)
+## Phase 4: Dispatch Codex (`run_in_background`, full-access sandbox on the initial dispatch)
 
-ohaze bypasses the `codex-companion.mjs` task interface because that interface is hardcoded to `workspace-write` sandbox, which blocks writes outside the worktree (e.g., `~/Brain/`, `~/.claude/`, cross-project paths). Many ohaze ship plans legitimately need those writes — vault sync, global settings patches, registry registration.
-
-Instead, invoke `codex exec` directly with `--sandbox danger-full-access`. The ship flow has already gated this through brainstorm → plan review → adversarial review, so the implicit trust boundary is at `/ohaze:ship` invocation, not at the Codex layer.
+ohaze dispatches `codex exec` directly with `--sandbox danger-full-access` because ship plans legitimately need writes outside the worktree (cross-project paths, global settings, etc.). The trust boundary is at `/ohaze:ship` invocation — brainstorm → plan → adversarial review have already gated this.
 
 ### Step 1 — Write prompt to a file (avoid shell quoting hell)
 
@@ -35,126 +34,116 @@ PROMPT_FILE=<worktree_path>/.ohaze/codex-prompt.xml
 # Use the Write tool to write the full XML string to PROMPT_FILE
 ```
 
-Use the Write tool (not a heredoc) for the prompt file. The XML contains backticks, dollar signs, and possibly other shell metachars — only Write is safe.
+Use the Write tool (not a heredoc) for the prompt file — the XML contains backticks, dollar signs, and other shell metachars. The reason is **structural safety**, not hook triggering (vault has been stripped from ohaze; no hook fires here).
 
-### Step 2 — Generate a job id, set log path
+### Step 2 — Background-dispatch `codex exec`
 
-```bash
-JOB_ID="ohaze-$(date +%s)-$$"
-LOG_FILE=<worktree_path>/.ohaze/codex-${JOB_ID}.log
-PID_FILE=<worktree_path>/.ohaze/codex-${JOB_ID}.pid
-```
-
-### Step 3 — Background-dispatch codex exec
-
-Use Claude Code's `Bash(run_in_background: true)` so the main session is not blocked.
+Use Claude Code's `Bash` tool with `run_in_background: true`. The harness tracks the background task and re-invokes the main agent automatically when the process exits.
 
 ```bash
-# Bash tool call with run_in_background=true.
-# codex exec reads the prompt from stdin when "-" is the positional arg
-# (or omitted entirely when stdin is piped).
-nohup codex exec \
+codex exec \
   --sandbox danger-full-access \
   --skip-git-repo-check \
   --cd <worktree_path> \
-  < <prompt_file> \
-  > <log_file> 2>&1 &
-echo $! > <pid_file>
+  --json \
+  < <prompt_file>
 ```
 
-(Verify `codex exec --help` if the installed version's flags differ.)
+**Strict rules for this dispatch:**
 
-### Step 4 — Persist job metadata to handoff
+- **No `nohup`, no trailing `&`, no `> log 2>&1`, no `echo $! > pid_file`** — the harness owns process tracking via `run_in_background`. Those legacy mechanisms predate harness re-invoke and have been removed.
+- **Must include `--json`** so we can parse the streamed event log for `thread.started` and the final message.
+- **Must run inside a real git project directory** (`--cd <worktree_path>` points at the ship worktree). codex exec exits non-zero in `/tmp` or any non-git path.
 
-Update `.ohaze/current-ship.json` to include the job id, pid file, and log file. The retry / review flow uses these instead of a companion-issued run id.
+### Step 3 — Capture `thread_id` and `codex_bg_id`
+
+- `codex_bg_id` = the background task id returned by Claude Code's `Bash(run_in_background: true)`. The main agent uses `BashOutput(codex_bg_id)` later to read the streamed `--json` events.
+- `thread_id` = the UUID emitted in the **first** `--json` event:
+
+  ```
+  {"type":"thread.started","thread_id":"<UUID>"}
+  ```
+
+  The field name is **`thread_id`** (not `session_id`), matching the filename UUID in `~/.codex/sessions/.../rollout-*-<UUID>.jsonl`. Read the first few lines of the background output with `BashOutput` to extract it.
+
+  If the first event cannot be parsed (rare — codex error before thread start), set `thread_id` to JSON `null`, surface one visible warning to the user, and continue. The retry path will then have to use the `--last` fallback (see Phase 6).
+
+### Step 4 — Persist to handoff
+
+Update `.ohaze/current-ship.json` to record:
 
 ```json
 {
   ...
-  "codex_job_id": "ohaze-1747431234-12345",
-  "codex_pid_file": "<worktree>/.ohaze/codex-<job_id>.pid",
-  "codex_log_file": "<worktree>/.ohaze/codex-<job_id>.log",
-  "codex_thread_resume": false
+  "state": "running",
+  "thread_id": "<UUID or null>",
+  "codex_bg_id": "<background task id>"
 }
 ```
 
-(`codex_run_id` field — kept for vault-adapter back-compat — gets set to the same value as `codex_job_id`.)
+The authoritative `current-ship.json` schema is defined in `commands/ship.md`; this skill only writes the Phase 4 fields. Legacy fields `codex_session_id` / `codex_run_id` / `codex_job_id` / `codex_pid_file` / `codex_log_file` / `codex_thread_resume` / `started_at` are **gone** — do not re-introduce them.
 
-### Step 5 — Report to user and schedule auto-resume
+### Step 5 — Report and let go
 
-Don't just stop after dispatch. The caller (`/ohaze:ship`) is responsible for scheduling the wakeup that auto-resumes into `/ohaze:ship-review`; this step's job is just to dispatch + report.
+Don't poll, don't sleep, don't `ScheduleWakeup`. Report to the user and return control to the caller; the main agent's turn ends. The harness will re-invoke the main agent when the background codex task exits, and `/ohaze:ship-review`'s idempotent state gate will pick up from there.
 
-Report to the user:
+> "Codex 在后台跑 (codex_bg_id=`<id>`, thread_id=`<UUID|null>`, sandbox=`danger-full-access`).
+> 进程完成后 harness 会自动唤醒主 agent 进 review,无需手动触发。
+> 中途想看进度: `BashOutput <codex_bg_id>` 读流式 --json 事件。"
 
-> "Codex 已在后台跑 (job_id=`<id>`, sandbox=danger-full-access). 进度:
-> - `tail -f <log_file>` — 实时日志
-> - `ps -p $(cat <pid_file>)` — 进程状态
->
-> 主进程会自动接 Phase 5 review, 不需要手动触发."
+## Phase 5: Claude-side Review (cross-source + real test run)
 
-Then return control to the caller — `/ohaze:ship` will call `ScheduleWakeup(prompt="/ohaze:ship-review")` and end the turn. Phases 5-6 happen on wakeup (or on a user-initiated `/ohaze:ship-review`).
-
-### About `--wait` mode
-
-If the caller passed `mode=--wait`, drop the `&` and `run_in_background` — let `codex exec` run in the foreground and proceed inline to Phase 5 in the same turn.
-
-## Phase 5: Claude-side Review
-
-Trigger this when the Codex run completes (the pid in `<pid_file>` is no longer alive, or the log shows the end-of-run report). The normal entry path is the scheduled wakeup that `/ohaze:ship` fired (`prompt: "/ohaze:ship-review"`). The user can also invoke `/ohaze:ship-review` manually at any time.
+Triggered when the background Codex task completes — the harness re-invokes the main agent, `/ohaze:ship-review`'s pre-flight state gate sees `state == "codex_done"`, and dispatches review. The user can also invoke `/ohaze:ship-review` manually; the state gate handles both entry paths identically.
 
 ### Phase 5.0: Apply Codex's pending changes as commits (REQUIRED)
 
-Even though Codex now has full sandbox access (could commit itself), ohaze keeps commit authority at the orchestrator by convention — see plan-to-codex-prompt's `<commit_handling>`. This ensures consistent commit message style and lets the orchestrator group / split commits per Task.
+ohaze keeps commit authority at the orchestrator (Claude main session) by convention — see `plan-to-codex-prompt`'s `<commit_handling>`. Codex therefore leaves uncommitted changes in the worktree; the orchestrator commits them before review.
 
-Codex therefore leaves uncommitted changes in the worktree. Before review, the orchestrator must commit them using the messages the plan / Codex's report specified.
-
-1. Fetch Codex's final result by reading `<log_file>` (the full Codex stdout) or its tail. Look for the report block that lists "suggested commit messages per Task" (see plan-to-codex-prompt's `<output_report>`).
+1. Read Codex's final report from the `--json` stream via `BashOutput(codex_bg_id)`. The final `message` event contains the structured report (Tasks completed / Touched files / Notable choices / suggested per-Task commit messages). **Do not rely on `-o/--output-last-message`** — that flag does not produce a file when `--json` is set (verified against codex 0.137 in dogfood).
 
 2. Inspect what Codex left behind:
+
    ```bash
    git -C <worktree_path> status --short
    git -C <worktree_path> diff
    ```
 
 3. If there are uncommitted changes:
-   - **Single Task changed**: stage all changes and commit with the single message from Codex's report.
-     ```bash
-     git -C <worktree_path> add -A
-     git -C <worktree_path> commit -m "<intended message from Codex report>"
-     ```
-   - **Multiple Tasks (multiple intended messages)**: try to split per-Task using the plan's `Files:` sections to determine which files belong to which Task. If splitting is not feasible (files overlap), fall back to one combined commit using the LAST intended message.
+   - **Single Task changed**: stage all changes and commit with the single suggested message from Codex's report.
+   - **Multiple Tasks (multiple suggested messages)**: try to split per-Task using the plan's `Files:` sections to determine which files belong to which Task. If splitting is not feasible (files overlap), fall back to one combined commit using the LAST suggested message.
    - If `git commit` fails (hooks, etc.), surface the error and stop. Do NOT bypass hooks.
 
-4. If working tree is already clean (Codex DID manage to commit, or there were no changes), skip step 3.
+4. If the working tree is already clean (Codex committed itself, or there were no changes), skip step 3.
+
+After Phase 5.0, transition `current-ship.json.state = "codex_done"` if it isn't already.
 
 ### Phase 5.1: Compute the diff to review
 
-   ```bash
-   git -C <worktree_path> diff <base_ref>...HEAD
-   git -C <worktree_path> log --oneline <base_ref>..HEAD
-   ```
+```bash
+git -C <worktree_path> diff <base_ref>...HEAD
+git -C <worktree_path> log --oneline <base_ref>..HEAD
+```
 
-### Phase 5.2: Dispatch the reviewer subagent
+### Phase 5.2: Dispatch the reviewer subagent (异源对抗写死)
 
-Dispatch with `subagent_type="general-purpose"`. superpowers does NOT ship a `code-reviewer` subagent — its review mechanism is a `general-purpose` subagent fed the `requesting-code-review/code-reviewer.md` prompt template. ohaze's review prompt (the 3-PART ADVERSARIAL + DOC-DRIFT template below) is fully self-contained and does not depend on that template.
+The reviewer **MUST** be a `general-purpose` subagent (which inherits the Opus main model), deliberately cross-source from Codex. The cross-source design is the whole point of ohaze's adversarial review — do not change this to a Codex self-review or `codex exec review`; both are same-source and architecturally invalid.
 
-   ```
-   Agent(
-     subagent_type="general-purpose",
-     description="Review Codex implementation against plan",
-     prompt=<see review prompt template below>
-   )
-   ```
+```
+Agent(
+  subagent_type="general-purpose",
+  description="Adversarially review Codex implementation against plan (real test run required)",
+  prompt=<see review prompt template below>
+)
+```
 
-### Phase 5.3: Write review-verdict.json (vault hook trigger)
+### Phase 5.3: Write `review-verdict.json`
 
-After the reviewer returns, **immediately** write the verdict to disk so the vault hook can capture it.
+After the reviewer returns, write the verdict to disk. The Write tool is preferred for structural safety (the JSON contains arbitrary user strings; heredocs are quoting hazards), but there is **no hook dependency** — vault has been stripped from ohaze.
 
-**Use the `Write` tool** (not a `Bash` heredoc) — vault-adapter's `hooks.json` only fires `PostToolUse` on `Write`. A heredoc would silently skip E_verdict (no PASS/FAIL row appended to the vault discussion, no ADVERSARIAL surfacing).
-
-Target file: `<ohaze_dir>/review-verdict.json` where `<ohaze_dir>` is the `.ohaze/` directory **inside the worktree** (same dir as `current-ship.json`).
+Target file: `<worktree_path>/.ohaze/review-verdict.json`.
 
 Content shape:
+
 ```json
 {
   "iteration": <current_retry_count>,
@@ -173,25 +162,23 @@ Content shape:
 - **Include all CRITICAL, IMPORTANT, and ADVERSARIAL findings in `issues`** with their prefix preserved. Skip NITs.
 - Include DOC-DRIFT findings in `doc_drift` as strings. Use `[]` when there is no document drift.
 - For PASS without any ADVERSARIAL findings: `issues` is `[]`.
-- For PASS with ADVERSARIAL findings: include them — vault adapter surfaces them in discussions as advisory.
-- For FAIL: include all CRITICAL/IMPORTANT/ADVERSARIAL entries (the user needs the full picture before retry).
-- This write triggers the `PostToolUse(Write)` hook → `vault-adapter.sh on-write` → `_handle_verdict`.
+- For PASS with ADVERSARIAL findings: include them — they're advisory and consumed by `ohaze:finishing` (specifically the 6th finishing menu option "修复对抗审查后收尾", which only appears when ADVERSARIAL findings exist).
+- For FAIL: include all CRITICAL/IMPORTANT/ADVERSARIAL entries — the user needs the full picture before retry.
 - Do this in **every** iteration of the retry loop, not just on first verdict.
 
-### Review prompt template
+### Review prompt template (实跑验证 + 异源对抗)
 
 ```
-You are reviewing Codex's implementation against the plan it was given.
+You are reviewing Codex's implementation against the plan it was given. You are deliberately a different model from the one that wrote the code — your job is adversarial cross-check, not rubber-stamp.
 
 Plan file: {plan_path}
+Spec file: {spec_path}
 Base branch: {base_ref}
 Worktree: {worktree_path}
+Project test command: {project_test_command}
+Codex's structured report (from --json stream): {codex_report}
 
-<vault_context>
-{vault_context}
-</vault_context>
-
-Your four-part review:
+Your four-part review (verification-before-completion internalized — evidence before assertions):
 
 PART 1 — Contract compliance:
 - Read the guidance plan at `{plan_path}` — this is what Codex was given. It contains Behavior Contracts, Files lists, and Acceptance Criteria per Task, not prescriptive code.
@@ -204,15 +191,19 @@ PART 2 — Code quality:
 - Standard quality concerns: error handling, edge cases, naming, dead code, leaked secrets.
 - Do NOT flag style nits the plan didn't require.
 - Do NOT flag "Codex's implementation choice differs from what I would have written" — that's autonomy by design.
-- If vault_context is non-empty: also flag violations of past project decisions or user preferences noted there.
+
+PART 2.5 — **Real test run (verification-before-completion, mandatory)**:
+- Run `{project_test_command}` from `{worktree_path}` and capture the **actual** output. Do not skip this. Do not infer pass/fail from the diff alone.
+- If the project has no aggregate test command, run the per-Task acceptance assertions listed in the plan (grep/test/JSON-load commands) and capture each one's exit status.
+- Quote real output in your verdict (not paraphrased). "tests pass" without evidence is not acceptable.
+- A failing test or assertion is automatically CRITICAL.
 
 PART 3 — DOC-DRIFT:
-Detect whether this `git diff` makes the target project's `CLAUDE.md` descriptive sections inaccurate or stale.
+Detect whether this `git diff` makes the target project's `CLAUDE.md` / `README.md` / `ROADMAP.md` descriptive sections inaccurate or stale.
 
-- Only inspect these descriptive sections: `关键文件`, `设计决策`, `阶段归属`, `前置要求`, `外部依赖`.
-- 不检测 当前目标 checkbox 区; progress checkboxes are handled later by the document finishing step.
+- Only inspect descriptive sections (architecture notes, key files, design decisions, external deps); 不检测 progress checkboxes — those are handled later by the document finishing step.
 - Output doc-drift items as `<section>: <失真描述>`.
-- DOC-DRIFT findings do **不进 PASS/FAIL** gate. They are advisory, like ADVERSARIAL findings, and are consumed later by `ohaze:finishing` `doc-finish`.
+- DOC-DRIFT findings do **not** gate PASS/FAIL. They are advisory, consumed by `ohaze:finishing` `doc-finish`.
 
 PART 4 — Adversarial review (design challenge):
 This is NOT a stricter pass over PART 1/2. This is a different lens entirely. Even if the implementation is correct and clean, ask whether the chosen approach is the right one.
@@ -222,13 +213,13 @@ This is NOT a stricter pass over PART 1/2. This is a different lens entirely. Ev
 - Challenge the assumptions: what does this code assume about inputs, runtime, scale, concurrency, or future requirements that could break under real-world conditions?
 - Challenge the tradeoffs: are tradeoffs documented? Are they the right ones?
 - Findings here go under `ADVERSARIAL:` regardless of severity. They surface design risks the user should consciously accept or revise.
-- **ADVERSARIAL findings do NOT cause FAIL by themselves**. They are advisory. PART 1/2 issues are what gate ship.
+- **ADVERSARIAL findings do NOT cause FAIL by themselves**. They are advisory. PART 1/2/2.5 issues are what gate ship. The finishing menu's 6th option ("修复对抗审查后收尾") gives the user a structured path to fix accepted ADVERSARIAL items.
 
 Return verdict in this exact format:
 
 VERDICT: PASS or FAIL
 
-VERDICT is FAIL **if and only if** at least one CRITICAL or IMPORTANT issue exists from PART 1/2. ADVERSARIAL findings alone never cause FAIL.
+VERDICT is FAIL **if and only if** at least one CRITICAL or IMPORTANT issue exists from PART 1/2/2.5 (including failing real test runs). ADVERSARIAL findings alone never cause FAIL.
 
 If FAIL, list issues by severity:
 - CRITICAL: <issue> — <file:line>
@@ -241,56 +232,82 @@ ADVERSARIAL findings (always include if any, regardless of verdict):
 DOC-DRIFT findings (always include; use [] if none):
 - DOC-DRIFT: <section>: <失真描述>
 
-If PASS with no ADVERSARIAL findings: one-line summary.
-If PASS with ADVERSARIAL findings: one-line summary followed by the ADVERSARIAL list.
+Real test run evidence (always include — even on PASS):
+- Command: <project_test_command>
+- Exit status: <code>
+- Tail of output: <last ~20 lines or assertion summary>
+
+If PASS with no ADVERSARIAL findings: one-line summary + real-test evidence.
+If PASS with ADVERSARIAL findings: one-line summary + ADVERSARIAL list + real-test evidence.
 ```
 
-`{vault_context}` is assembled by the caller before dispatching — concatenate the content of the 3 most recent decision files from `~/Brain/20_Projects/{project}/decisions/` and `~/Brain/99_System/Logs/decision-patterns.md`. If those files don't exist, leave `{vault_context}` empty.
+## Phase 6: Retry Loop (max 3 iterations, stuck-detection upgrade)
 
-## Phase 6: Retry Loop (max 3 iterations)
+Track retry counter starting at 0; persist in `.ohaze/current-ship.json.retries`.
 
-Track retry counter starting at 0.
+- If reviewer returns `VERDICT: PASS`: report success, transition `state` (caller decides — usually proceeds to Phase 7 `ohaze:finishing`), end skill.
 
-- If reviewer returns `VERDICT: PASS`: report success to user, end skill, caller proceeds to Phase 7 (`ohaze:finishing`).
+- If reviewer returns `VERDICT: FAIL` and `retries < 3`:
 
-- If reviewer returns `VERDICT: FAIL` and retry < 3:
-  1. Format the issues as a delta instruction:
+  1. **Stuck-detection diagnosis (internalized systematic-debugging)**: before blindly dispatching another resume, check whether the same class of issue keeps re-appearing across consecutive iterations.
+     - If iteration N has issues that overlap substantially with iteration N-1's issues, ask one diagnostic question: **plan problem vs Codex execution problem?**
+       - **Plan problem** (the contract itself is unclear / impossible / contradicts another Task): stop, surface the issue to the user, and recommend rolling back to revise the plan rather than dispatching yet another fix attempt. Do not silently burn the remaining retries.
+       - **Execution problem** (the contract is right but Codex keeps missing it): continue with resume, but include explicit "anti-regression" guidance in the fix prompt (see step 3).
+     - If the issues are different from last iteration, proceed normally to step 3.
+
+  2. Transition `state = "review_fail"` and increment `retries`.
+
+  3. Format a structured fix prompt:
+
      ```
      <task>
-     The previous Codex run completed but the Claude-side reviewer found these issues. Fix them in the same worktree without changing anything else.
+     The previous Codex run completed but the cross-source reviewer found these issues. Fix them in the same worktree without changing anything else.
 
-     Issues to fix:
-     {bullet list of CRITICAL and IMPORTANT issues with file:line — DO NOT include ADVERSARIAL findings here; those are design-level concerns for the user to decide on, not for Codex to auto-fix}
+     Issues to fix (each one specifies file:line + the contract / acceptance criterion it violates + what state must hold after the fix — *what*, not *how*. Do NOT include ADVERSARIAL findings; those are design-level concerns the user decides on, not for you to auto-fix):
+
+     {bullet list of CRITICAL and IMPORTANT issues, each as: "<file:line> — violates {contract/AC ref from plan} — expected: <what>"}
+
+     Real test failure evidence from the reviewer (if any):
+     {quoted tail of failing test output}
      </task>
+
+     <anti_regression>
+     Previous iterations changed (and reviewer still found these issues):
+     {bullet list of "iter N: changed X — still failing because Y" for prior iterations}
+     Do not re-apply changes that were already shown not to fix the issue. If the contract is genuinely impossible, say so in your report instead of pretending another attempt.
+     </anti_regression>
 
      <action_safety>
      - Only address the listed issues. Do not refactor anything else.
      - Do not introduce new files unless required to fix an issue.
-     - Commit fixes with messages like "fix: <one-line summary of issue>".
+     - Suggested commit messages: "fix: <one-line summary of issue>" per fix; orchestrator commits.
      </action_safety>
 
      <verification_loop>
-     After fixing, re-run the project test command. All tests must pass before reporting done.
+     After fixing, re-run {project_test_command} (or the per-Task acceptance assertions). All must pass before reporting done.
      </verification_loop>
      ```
-  2. Read `codex_session_id` from `.ohaze/current-ship.json`. Write the fix prompt to `<worktree>/.ohaze/codex-fix-iter<N>.xml` via Write tool, then dispatch with `codex exec resume <codex_session_id>` (continues the same Codex thread started in Phase 4):
+
+  4. Read `thread_id` from `.ohaze/current-ship.json`. Write the fix prompt to `<worktree_path>/.ohaze/codex-fix-iter<N>.xml` via Write tool, then dispatch:
 
      ```bash
-     # Foreground for retries — user is engaged, no need to background
-     codex exec resume <codex_session_id> \
-       --sandbox danger-full-access \
+     codex exec resume <thread_id> \
        --cd <worktree_path> \
-       < <worktree>/.ohaze/codex-fix-iter<N>.xml \
-       2>&1 | tee -a <log_file>
+       --json \
+       < <worktree_path>/.ohaze/codex-fix-iter<N>.xml
      ```
 
-     If `codex_session_id` is empty or missing, do not silently choose a global thread. Print and append to the Codex log: `WARNING: session id 缺失，并行 ship 下 resume 可能不精确`; only then use the fallback command `codex exec resume --last`.
+     **`codex exec resume` MUST NOT include `--sandbox`.** The sandbox is fixed at the initial `codex exec` and inherited by every resume; passing `--sandbox` to `resume` is rejected by codex 0.137. (This was a real bug in the pre-v2 implementation.)
 
-     If exact resume fails to find the prior thread (e.g., codex was restarted between sessions), fall back to a fresh `codex exec` with the fix prompt embedded inside a `<task>` block that references the original goal (read it from the saved prompt file or the log).
-  3. Increment retry counter; update `.ohaze/current-ship.json` `retries` field.
-  4. Re-run Phase 5 (review).
+     Dispatch via `Bash(run_in_background: true)` again so the harness re-invokes the main agent on completion — same control-flow shape as Phase 4. The orchestrator does not wait synchronously.
 
-- If reviewer returns `VERDICT: FAIL` and retry == 3:
+     If `thread_id` is missing or `null`: print and append a prominent warning to the user — `WARNING: thread_id 缺失,resume 退化为 --last,并行 ship 下不精确` — only then dispatch the fallback `codex exec resume --last --cd <worktree_path> --json` (still no `--sandbox`).
+
+     If exact resume fails to find the prior thread (rare — codex was restarted between sessions, or the rollout file was rotated): fall back to a fresh `codex exec` with a `<task>` that embeds both the original goal (re-read from the saved prompt file) and the fix delta. Note this in the retry log so the reviewer knows context may have been lost.
+
+  5. Re-run Phase 5 (the harness re-invoke + state gate handles this).
+
+- If reviewer returns `VERDICT: FAIL` and `retries == 3`:
   - Stop and report all 3 attempts' findings to the user in a structured summary:
     ```
     Codex 已尝试修复 3 次, 审查仍未通过. 当前状态:
@@ -302,28 +319,29 @@ Track retry counter starting at 0.
     选项:
     1. 继续让 Codex 再试 1 次 (`/ohaze:ship-review --more`)
     2. 你手动介入修复
-    3. 接受现状直接进入 finishing
+    3. 接受现状直接进入 finishing (ADVERSARIAL/IMPORTANT 可经第 6 项「修复对抗审查后收尾」补救)
     ```
   - Wait for user choice. Do NOT auto-retry past 3.
 
 ## What this skill does NOT do
 
 - Does NOT translate plan to prompt — that's `ohaze:plan-to-codex-prompt`.
-- Does NOT run brainstorming, planning, worktree setup, or finishing — those are superpowers skills, orchestrated by `/ohaze:ship`.
-- Does NOT itself schedule the auto-resume — that's `/ohaze:ship`'s job (it calls `ScheduleWakeup` after this skill returns). The executor only dispatches Codex and returns; the orchestrator schedules.
-- Does NOT poll Codex synchronously. The polling pattern is: `/ohaze:ship` schedules wakeup → wakeup fires `/ohaze:ship-review` → its pre-flight checks pid → still alive re-schedules / done proceeds to Phase 5.
+- Does NOT run brainstorming, planning, worktree setup, or finishing — those are owned by `ohaze:brainstorming` / `ohaze:writing-plans` / `ohaze:using-git-worktrees` / `ohaze:finishing`, orchestrated by `/ohaze:ship`.
+- Does NOT schedule any `ScheduleWakeup` — the v2 control flow relies on `run_in_background` harness re-invoke. No fallback wakeup is set (A-plan: state gate is the only ghost-wake defense, see spec §3).
+- Does NOT poll Codex synchronously. The control-flow pattern is: `Bash(run_in_background)` dispatch → main turn ends → harness re-invokes on codex exit → `/ohaze:ship-review` state gate picks up.
 
 ## Resume Boundary
 
-Use `resume` only inside the same ship lifecycle: review retry and modify flows for the active `.ohaze/current-ship.json`.
+Use `codex exec resume` only inside the same ship lifecycle: the review retry loop (Phase 6 above) and the finishing modify / 6th-option ADVERSARIAL-fix flows (`ohaze:finishing`). All use the captured `thread_id`, no `--sandbox`.
 
-If a bug is found after finishing completes, start a **新 fix ship** with a new worktree, new plan, and new Codex session. Do **不 resume 旧 session** after finishing. Feed the old feature's plan, vault decisions, and relevant commits into the new ship prompt as explicit reference material instead of depending on Codex session memory.
+If a bug is found after finishing completes, start a **新 fix ship** with a new worktree, new plan, and new Codex session. Do **not** resume the old session post-finish. Feed the old feature's plan and relevant commits into the new ship prompt as explicit reference material instead of depending on Codex session memory.
 
 ## Failure modes and recovery
 
-- **`codex` binary not found**: report the failure; tell the user to install the `codex` CLI (`npm install -g @openai/codex`) and authenticate (`codex login`). Do not improvise an inline implementation.
-- **Background nohup exits immediately (pid no longer alive within 5s)**: tail the log file — Codex likely refused to start (auth issue, sandbox flag rejected by old codex version, prompt file unreadable). Surface the actual error.
-- **Reviewer subagent returns malformed verdict**: re-dispatch the reviewer once with stricter format guidance. If it fails again, fall back to asking user to read `git diff` and decide.
-- **Worktree state is dirty after Codex log says done**: read the log's `Notable implementation choices` and `Touched files` to confirm completion intent. The orchestrator should then commit per the Task message mapping in Phase 5.0.
-- **Exact `codex exec resume <codex_session_id>` fails to find prior thread**: fall back to fresh `codex exec` with combined "original task + fix delta" prompt. Note this in the retry log so the reviewer knows context may have been lost.
-- **`codex_session_id` missing**: log `WARNING: session id 缺失，并行 ship 下 resume 可能不精确`, then and only then use fallback `codex exec resume --last`.
+- **`codex` binary not found**: report the failure; tell the user to install (`npm install -g @openai/codex`) and authenticate (`codex login`). Do not improvise an inline implementation.
+- **Background codex exits immediately**: the harness re-invokes the main agent quickly. Read `BashOutput(codex_bg_id)` — the tail will show why (auth issue, sandbox flag rejected by an old codex version, prompt file unreadable, exit 1 from non-git directory). Surface the actual error.
+- **Reviewer subagent returns malformed verdict**: re-dispatch the reviewer once with stricter format guidance. If it fails again, fall back to asking the user to read `git diff` and decide.
+- **Real test command unknown**: stop and ask the user. Do NOT guess `npm test` for a project that has no `package.json`; the spec's verification-before-completion requirement demands a real command.
+- **Exact `codex exec resume <thread_id>` fails to find prior thread**: fall back to fresh `codex exec` with combined "original task + fix delta" prompt. Note in the retry log so the reviewer knows context may have been lost.
+- **`thread_id` missing**: log `WARNING: thread_id 缺失,resume 退化为 --last,并行 ship 下不精确`, then and only then use fallback `codex exec resume --last` (no `--sandbox`).
+- **Stuck loop (same issues iter after iter)**: trigger the Phase 6 stuck-detection diagnosis — do not blindly burn retries 2 and 3.
