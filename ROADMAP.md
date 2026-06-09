@@ -15,9 +15,10 @@ v2.0.0 重构：零运行时外部 skill 依赖 + vault 流程层剥离 + 修核
 - [x] finishing 6 项菜单（第 6 项「修复对抗审查后收尾」conditional）+ doc-finish 内化 neat 路由
 - [x] 异源审查强化（实跑 project_test_command + 卡住升级诊断）
 - [x] 四件套文档对齐 + 修死链
+- [x] 静态自审闭环：两轮 `/code-review high` → 19 findings（F1–F10 + R1–R9）全修，详见 CHANGELOG「Release-prep fixes」
+- [ ] dogfood 实证（装机后端到端跑 throwaway ship；通过后 tag `v2.0.0`）
 
 ## Backlog
-- 集成验证 dogfood（v2 装机后端到端跑一个 throwaway ship 冒烟验证）
 - 定期 diff superpowers v5.1.0 上游 brainstorming / using-git-worktrees SKILL.md（基线漂移监控）
 - 持久化 Codex 输出（`codex-executor` Phase 4 `tee` `--json` 到 `<worktree>/.ohaze/codex-output.jsonl`），使 doc-finish 真相源跨 session 可用，消除 F9 的 fallback 降级
 

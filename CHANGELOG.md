@@ -52,8 +52,31 @@
 - **plugin.json**：version 1.9.2 → 2.0.0；description 改自包含口径；keywords 移除 superpowers，新增 adversarial-review
 
 ### Fixed
-- **`codex exec resume` 错误带 `--sandbox`**：原 `codex-executor` 第 280 行残留 v1 实现 bug，v2 全面修复（含 retry / modify 5a / 第 6 项 ADVERSARIAL 修复）
+- **`codex exec resume` 错误带 `--sandbox`**：原 `codex-executor` 第 280 行残留 v1 实现 bug，v2 全面修复（含 retry / modify 2a / 第 6 项 ADVERSARIAL 修复）
 - **资源浪费的 ScheduleWakeup 二次唤醒**：v1 完成后未取消 ScheduleWakeup 仍到点执行（haze 提报）；v2 不设兜底唤醒，幂等状态门吃掉任何重入，从源头杜绝
+
+#### Release-prep fixes（两轮 `/code-review high` → 19 findings 全修，未 tag/release 前折叠进本块）
+
+**第一轮（10 findings, F1–F10）**
+- **F1 状态门死锁**：`ship-review.md` 缺 `state=running → codex_done` 的 liveness 检测转换，harness re-invoke 后会无限循环卡 `running`。补 Step 3a「liveness-detect-and-transition」契约（含 race-window tiebreaker）
+- **F2/F3/F4 resume 命令体 + 前台 fallback**：`codex exec resume` 残留 `--cd`（codex 0.137 不支持）、`codex_bg_id` 未持久化、`run_in_background:false` 路径无前台执行入口。统一去 `--cd`、Read-modify-Write 落 bg_id、补 foreground tee 落 `codex_report_source`
+- **F5 `/exit` 安全承诺**：`ship.md` 错误声称「保存进度后可 `/exit`」，但 stdin 关闭后 codex 子进程会被 SIGHUP。删该虚假承诺
+- **F6 `allowed-tools` 缺 `BashOutput`**：`ship.md` / `ship-review.md` / `ship-finish.md` / `status.md` 四个 command frontmatter 都未声明 `BashOutput`，运行时会被拒
+- **F7 modify 子流程编号**：原文里 `5a/5b/5c` 错位（实际是 modify 子项，不是 Phase 5），全仓改 `2a/2b/2c`
+- **F8 `linked_todo` 落点**：原写进 CHANGELOG/CLAUDE.md，违反全局四件套契约。改写进 `ROADMAP.md ## 当前主线`
+- **F9 doc-finish 真相源 fallback**：`finishing` 找不到主真相源（spec / plan）时无 fallback，会卡死。补「按 git diff 推断」兜底路径
+- **F10 `codex-executor` Inputs 段缺 `spec_path` / `mode`**：契约级遗漏，调用方传了但 skill 文档没声明。补全 Inputs 表 + 分支契约
+
+**第二轮（9 findings, R1–R9）**
+- **R1 callers 未显式传 `mode=`**：`ship.md` / `ship-review.md` / `ship-finish.md` 三个 caller invoke `codex-executor` 时未显式传 `mode`，缺省 fallback 会把 review 当作 dispatch 重跑 codex。三处全部补 `mode='dispatch'` / `mode='review'`
+- **R2 foreground `codex_bg_id` 失效路径**：前台 codex 跑完后 `codex_bg_id` 还指向已结束的 task，`finishing` / `codex-executor` 后续步骤 `BashOutput` 会拉空。改读 `codex_report_source` 文件兜底
+- **R3 `BashOutput` OOM 风险**：codex `--json` 流多小时跑可达 5-20MB，无 `filter` 会爆 context。所有 `BashOutput` 调用强制带 `filter='"type":"(message|error)"|panic|fatal|unhandled'`
+- **R4 残留 `--cd`**：codex-executor 文档某处仍写 `codex exec resume --cd`，删除
+- **R5 Class 1 `linked_todo` no-match**：doc-finish Class 1 用 grep 找不到 `linked_todo` 时静默跳过，应 WARNING 提示「ROADMAP 条目缺失或已被人工删除」
+- **R6 `current-ship.json` Write 协议**：多个并发写点未约定「Read full → preserve all fields → Write with overrides」，存在覆盖 race。`ship.md` 加 `## Write Protocol` 章节，所有写点引用
+- **R7 race-window tiebreaker**：F1 修的 liveness 转换缺 codex「emit-final-then-exit」窗口处理（最终 `message` 已 emit 但进程未 exit），补 sleep 2s + 重查的 tiebreaker 分支
+- **R8 `codex_done` 双写**：状态门和 codex-executor Phase 5.0 都会写 `codex_done`，幂等但语义混乱。统一在 `ship-review.md` Step 3a 写一次
+- **R9 menu 2a 漏改**：F7 重命名时 `finishing` 第 2a 项 modify 子流程文档某处遗漏，补改
 
 ### Removed
 - **vault 镜像流程层耦合**：
