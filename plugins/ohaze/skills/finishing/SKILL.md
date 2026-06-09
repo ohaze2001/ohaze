@@ -93,21 +93,24 @@ This option only appears in the menu when the latest `review-verdict.json.issues
 
 3. **Write** the prompt to `<worktree_path>/.ohaze/codex-adversarial-fix.xml` via Write tool.
 
-4. **Dispatch FOREGROUND** (not `run_in_background`). The user is engaged at the menu — they expect the fix to finish before continuing. More importantly: skills cannot be resumed mid-execution across a `run_in_background` turn boundary, so a backgrounded dispatch here would leave steps 5-8 (commit / re-review / finish chain) unreachable after the harness re-invoked into a slash command at top level. Foreground keeps the finishing skill alive for the entire mini-loop.
+4. **Dispatch FOREGROUND with stdout tee** (not `run_in_background`). The user is engaged at the menu — they expect the fix to finish before continuing. More importantly: skills cannot be resumed mid-execution across a `run_in_background` turn boundary, so a backgrounded dispatch here would leave steps 5-7 (commit / re-review / finish chain) unreachable after the harness re-invoked into a slash command at top level. Foreground keeps the finishing skill alive for the entire mini-loop.
+
+   **Foreground tees stdout to a file** so step 5's Codex-report extraction has an addressable artifact (foreground commands don't produce a `codex_bg_id`, so `BashOutput(handoff.codex_bg_id)` would read the stale ORIGINAL Phase 4 dispatch's stream — silently wrong commit messages):
 
    ```bash
    cd <worktree_path> && codex exec resume <thread_id> \
      --json \
-     < <worktree_path>/.ohaze/codex-adversarial-fix.xml
+     < <worktree_path>/.ohaze/codex-adversarial-fix.xml \
+     | tee <worktree_path>/.ohaze/codex-adversarial-fix-output.jsonl
    ```
 
    Command flag asymmetry (verified against codex 0.137):
    - `codex exec resume` does **NOT** accept `--cd` (only top-level `codex exec` does). Change directory in the shell first.
    - `codex exec resume` does **NOT** accept `--sandbox`. Sandbox is inherited from the initial dispatch.
 
-   If `thread_id` is missing, fall back to `cd <worktree_path> && codex exec resume --last --json < <fix prompt>` with a prominent WARNING (same fallback rule as `ohaze:codex-executor` Phase 6).
+   If `thread_id` is missing, fall back to `cd <worktree_path> && codex exec resume --last --json < <fix prompt> | tee <output-file>` with a prominent WARNING (same fallback rule as `ohaze:codex-executor` Phase 6).
 
-5. **Auto-commit Codex's changes** via `ohaze:codex-executor` Phase 5.0 (same as retry / modify).
+5. **Auto-commit Codex's changes** via `ohaze:codex-executor` Phase 5.0 — but pass an explicit `codex_report_source` pointing at the teed file (`<worktree_path>/.ohaze/codex-adversarial-fix-output.jsonl`), NOT `BashOutput(codex_bg_id)`. Phase 5.0's report extraction step accepts either a `codex_bg_id` (background path) or a `codex_report_source` file path (foreground path); for this mini-loop, only the latter has the just-completed fix's report. Without this override Phase 5.0 would read the original dispatch's stale stream and use wrong per-Task commit messages.
 
 6. **Re-run review** (asked, not automatic — give the user a choice "要复验吗?"). Re-review does NOT increment the retry counter (user-initiated, not reviewer-driven). If FAIL on re-review, loop back to the menu so the user can decide next steps. If PASS (or skipped), proceed to the chosen finish chain.
 
@@ -305,21 +308,22 @@ After applying, run `{project_test_command}` (or the per-Task acceptance asserti
 </action_safety>
 ```
 
-Write to `<worktree_path>/.ohaze/codex-modify.xml` via Write tool. Then dispatch **FOREGROUND** (same reasoning as the 6th-option mini-loop — user is engaged, and skills cannot be resumed mid-execution across a `run_in_background` turn boundary):
+Write to `<worktree_path>/.ohaze/codex-modify.xml` via Write tool. Then dispatch **FOREGROUND with stdout tee** (same reasoning as the 6th-option mini-loop — user is engaged, and skills cannot be resumed mid-execution across a `run_in_background` turn boundary):
 
 ```bash
 cd <worktree_path> && codex exec resume <thread_id> \
   --json \
-  < <worktree_path>/.ohaze/codex-modify.xml
+  < <worktree_path>/.ohaze/codex-modify.xml \
+  | tee <worktree_path>/.ohaze/codex-modify-output.jsonl
 ```
 
 Command flag asymmetry (verified against codex 0.137):
 - `codex exec resume` does **NOT** accept `--cd` (only top-level `codex exec` does). Change directory in the shell first.
 - `codex exec resume` does **NOT** accept `--sandbox`. Sandbox is inherited from the initial dispatch.
 
-If `thread_id` is missing, fall back to `cd <worktree_path> && codex exec resume --last --json < <modify prompt>` with a prominent WARNING.
+If `thread_id` is missing, fall back to `cd <worktree_path> && codex exec resume --last --json < <modify prompt> | tee <output-file>` with a prominent WARNING.
 
-After Codex returns (foreground), run `ohaze:codex-executor` Phase 5.0 to commit pending changes with a message derived from `change_description`. Then ask whether to re-run review. Re-review does NOT increment the retry counter (user-initiated, not reviewer-driven). Loop back to the finishing menu.
+After Codex returns (foreground), run `ohaze:codex-executor` Phase 5.0 — pass `codex_report_source=<worktree_path>/.ohaze/codex-modify-output.jsonl` so Phase 5.0 reads the just-completed modify's report (not the stale Phase 4 dispatch's `BashOutput(codex_bg_id)`). Commit pending changes with a message derived from `change_description`. Then ask whether to re-run review. Re-review does NOT increment the retry counter (user-initiated, not reviewer-driven). Loop back to the finishing menu.
 
 ### 2b — Claude 主线程直接改
 

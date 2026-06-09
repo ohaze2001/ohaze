@@ -24,6 +24,7 @@ Hand a translated XML prompt to Codex via the `codex` CLI, then run the Claude-s
 - `main_repo_path` (optional, recommended): used only if a fallback (e.g. fresh `codex exec` after exact resume fails) needs to know the main checkout location.
 - `project_test_command` (required for review): the command the reviewer runs to verify behavior (e.g. `npm test`, `pytest`). For Markdown-only plugins where no aggregate command exists, pass a sentinel like `'(per-Task acceptance assertions inline in plan)'` — the reviewer's PART 2.5 then runs the per-Task grep/test assertions instead of an aggregate command.
 - `thread_id` (optional but expected for retry/modify/6th-option resume): read from `.ohaze/current-ship.json`; used for exact `cd <worktree> && codex exec resume <thread_id>` (no `--cd`, no `--sandbox`).
+- `codex_report_source` (optional, foreground-path only): absolute file path to a teed `.ohaze/codex-*-output.jsonl`. When set, Phase 5.0 reads Codex's final report from this file instead of `BashOutput(codex_bg_id)`. Callers `ohaze:finishing` 6th option + modify 2a pass this because their foreground dispatches don't produce a new `codex_bg_id` — without this override, Phase 5.0 would read the stale background dispatch's stream and use wrong commit messages.
 
 ### Mode branching contract
 
@@ -109,7 +110,11 @@ Triggered when the background Codex task completes — the harness re-invokes th
 
 ohaze keeps commit authority at the orchestrator (Claude main session) by convention — see `plan-to-codex-prompt`'s `<commit_handling>`. Codex therefore leaves uncommitted changes in the worktree; the orchestrator commits them before review.
 
-1. Read Codex's final report from the `--json` stream via `BashOutput(codex_bg_id)`. The final `message` event contains the structured report (Tasks completed / Touched files / Notable choices / suggested per-Task commit messages). **Do not rely on `-o/--output-last-message`** — that flag does not produce a file when `--json` is set (verified against codex 0.137 in dogfood).
+1. Read Codex's final report from the `--json` stream. Source depends on dispatch mode:
+   - **Background path (default, set by Phase 4 / Phase 6 retry)**: `BashOutput(codex_bg_id)` reads the streamed `--json` events. Use the optional `filter='\"type\":\"message\"'` parameter to avoid pulling MB of intermediate events into context (see R3 / Phase 4 Step 3 note on output filtering).
+   - **Foreground path (set by `ohaze:finishing` 6th option / modify 2a)**: caller passes input `codex_report_source` = absolute path to a teed `.ohaze/codex-*-output.jsonl` file. Use `Bash(tail -c 200000 <file>)` then scan for the final `message` event. **Do not** use `BashOutput(codex_bg_id)` on this path — `codex_bg_id` still points at the prior background dispatch (stale stream).
+
+   The final `message` event contains the structured report (Tasks completed / Touched files / Notable choices / suggested per-Task commit messages). **Do not rely on `-o/--output-last-message`** — that flag does not produce a file when `--json` is set (verified against codex 0.137 in dogfood).
 
 2. Inspect what Codex left behind:
 
