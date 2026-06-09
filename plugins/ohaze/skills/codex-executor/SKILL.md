@@ -317,7 +317,7 @@ Track retry counter starting at 0; persist in `.ohaze/current-ship.json.retries`
        < <worktree_path>/.ohaze/codex-fix-iter<N>.xml
      ```
 
-     **Capture the new `codex_bg_id`** returned by `Bash(run_in_background)` and **immediately update `.ohaze/current-ship.json.codex_bg_id`** via Write tool, replacing the prior dispatch's id. Every retry / modify / 6th-option resume returns a fresh background task id; downstream consumers (Phase 5.0 report extraction, `/ohaze:status` deep inspect, doc-finish 真相源, ship-review Step 3a liveness check) read this field and would otherwise hit a dead/old stream.
+     **Capture the new `codex_bg_id`** returned by `Bash(run_in_background)` and **immediately update `.ohaze/current-ship.json.codex_bg_id`** per the Read-modify-Write protocol in `ship.md` §Write Protocol (Read full file → preserve all other fields → Write with `codex_bg_id` AND `retries` overridden in the same Write to minimize race surface). Every retry / modify / 6th-option resume returns a fresh background task id; downstream consumers (Phase 5.0 report extraction, `/ohaze:status` deep inspect, doc-finish 真相源, ship-review Step 3a liveness check) read this field and would otherwise hit a dead/old stream.
 
      Dispatching via `Bash(run_in_background: true)` lets the harness re-invoke the main agent on completion — same control-flow shape as Phase 4. The orchestrator does not wait synchronously.
 

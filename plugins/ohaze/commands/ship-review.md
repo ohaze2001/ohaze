@@ -50,7 +50,7 @@ When the harness re-invokes the main agent after a `Bash(run_in_background)` Cod
 
    **(a) Task completed (background task status = `completed` or process exited):**
    - Scan the filtered tail for the final `message` event AND for any unhandled error.
-   - If output looks normal (has a final `message` event, no unhandled error): **transition `state = "codex_done"`** via Write tool on `current-ship.json` (per the Read-modify-Write protocol in `ship.md` §Write Protocol), then fall through to Phase 5 (Review).
+   - If output looks normal (has a final `message` event, no unhandled error): **transition `state = "codex_done"`** via the Read-modify-Write protocol in `ship.md` §Write Protocol (Read full file → preserve all fields → Write with only `state` overridden), then fall through to Phase 5 (Review).
    - If output shows Codex died mid-run (unhandled error, no final `message`, or output is truncated): surface the error verbatim and stop. Do NOT enter review on incomplete work.
 
    **(b) Task still running BUT final `message` event already present in filtered tail (race-window tiebreaker):**

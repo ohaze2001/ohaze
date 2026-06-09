@@ -203,6 +203,16 @@ Field semantics:
 
 **Removed in v2 (do not re-introduce):** `codex_session_id` (renamed to `thread_id`), `codex_run_id`, `codex_job_id`, `codex_pid_file`, `codex_log_file`, `codex_thread_resume`, `started_at`. All were tied to the legacy nohup+ScheduleWakeup+vault-adapter pipeline.
 
+### Write Protocol — every `.ohaze/current-ship.json` mutation MUST follow this
+
+Multiple flows touch `current-ship.json` after Step B (Phase 4 codex_bg_id capture, Phase 6 retry counter + codex_bg_id refresh, ship-review.md Step 3a state transition, finishing project_type / state transitions). The Write tool overwrites the entire file (there is no JSON-merge primitive), so any mutator MUST:
+
+1. **Read first** — use the Read tool on `<worktree_path>/.ohaze/current-ship.json` immediately before writing. The Claude Code harness also requires a prior Read for any Write to an existing file, but this protocol makes the requirement explicit and load-bearing (not incidental).
+2. **Preserve all fields** — construct the new JSON by spreading every field from the read content and overriding only the target field(s). Never Write a partial payload like `{"state": "codex_done"}` — that would wipe `thread_id`, `codex_bg_id`, `linked_todo`, etc.
+3. **Single-writer assumption** — v2.0.0 does NOT support concurrent writers. If two flows mutate the file in overlapping turns (e.g. a manual `/ohaze:ship-finish` racing a ship-review retry), the later Write silently overwrites the earlier. Parallel ships in different worktrees are safe because each owns its own `.ohaze/`. Future cross-worktree coordination (if any) MUST add a lockfile or temp-file-then-rename atomicity layer — flagged in `ROADMAP.md ## Backlog` as a v2.1+ candidate if needed.
+
+Cross-references that consume this protocol: ship-review.md §3a (state=running→codex_done transition), codex-executor §Phase 6 retry (codex_bg_id refresh + retries counter), finishing (project_type write, terminal state writes).
+
 ### Step C — Ensure `.worktrees/` and `.ohaze/` are gitignored
 
 If `.gitignore` (at `main_repo_path`) doesn't already ignore `.worktrees/` and `.ohaze/`, add them and commit on `main` once. Both are runtime artifacts, never committed.
