@@ -1,6 +1,6 @@
 ---
 name: writing-plans
-description: Use when you have a spec or requirements for a multi-step task that will be executed by Codex (not a human engineer). Produces a guidance plan — contracts, interfaces, acceptance — instead of prescriptive code, leaving implementation autonomy to Codex.
+description: Use when you have a spec or requirements for a multi-step task that will be executed by Codex; saves guidance plans under docs/ohaze/plans/.
 ---
 
 # Writing Plans (ohaze)
@@ -17,7 +17,7 @@ This skill is forked-and-adapted from `superpowers:writing-plans` (Jesse Vincent
 
 **Context:** If working in an isolated worktree, it should have been created via the `superpowers:using-git-worktrees` skill at execution time.
 
-**Save plans to:** `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`
+**Save plans to:** `docs/ohaze/plans/YYYY-MM-DD-<feature-name>.md`
 
 ---
 
@@ -279,15 +279,17 @@ For larger plans (≥ 4 Tasks or > 200 lines), optionally dispatch the plan-docu
 
 After saving the plan, do NOT show superpowers:writing-plans' "Subagent-Driven vs Inline Execution" menu — that menu belongs to a different execution model.
 
-Inside the ohaze flow (`/ohaze:ship`), present this prompt instead:
+Inside the ohaze flow (`/ohaze:ship`), emit a one-line summary and hand control back to Phase 3.5. Do not wait for a user "go"; `/ohaze:ship` owns default-go and interruptibility.
 
-> "Guidance plan saved to `docs/superpowers/plans/<filename>.md`. Codex will receive this verbatim — its contracts and acceptance criteria define done. Please review then reply 'go' to dispatch Codex."
+Use this format:
 
-Wait for user's 'go'. Then control returns to `/ohaze:ship` Phase 4 (which calls `ohaze:plan-to-codex-prompt`).
+> "📋 Plan saved → `docs/ohaze/plans/<filename>.md`, <N> Tasks, areas: <X>/<Y>/<Z>. Handing back to /ohaze:ship Phase 3.5 which will summarize and dispatch Codex."
+
+This "hand back" line is a return-from-subroutine signal, NOT an end-of-turn signal. `/ohaze:ship` Phase 3.5 proceeds in the same turn, prints the user-facing plan summary, applies default-go, and dispatches Codex unless the user interrupts with non-go content.
 
 If invoked standalone (not inside `/ohaze:ship`), just print:
 
-> "Guidance plan saved to `docs/superpowers/plans/<filename>.md`. Next step: hand to Codex via `ohaze:plan-to-codex-prompt` skill, or invoke `/ohaze:ship` to run the full flow."
+> "Guidance plan saved to `docs/ohaze/plans/<filename>.md`. Standalone mode: next step is to hand it to Codex via `ohaze:plan-to-codex-prompt`, or invoke `/ohaze:ship` to dispatch through the full flow."
 
 ---
 
