@@ -146,12 +146,17 @@ Invoke `ohaze:writing-plans`. It saves a guidance plan to `docs/ohaze/plans/<dat
 Print a one-line user-facing summary:
 
 ```text
-📋 Plan 写好了 → docs/ohaze/plans/<file>.md, 拆了 <N> 个 Task,涉及 <X / Y / Z 三块>, 准备进 Codex 实现,可打断
+📋 Plan 写好了 → docs/ohaze/plans/<file>.md, 拆了 <N> 个 Task,涉及 <X / Y / Z 三块>, 准备进 Codex 实现
 ```
 
-Default-go: proceed directly to Phase 4 dispatch in the same turn.
+Then ask one single-point `AskUserQuestion` before Phase 4 dispatch. This is the real interruption window.
 
-Interruptibility: if haze's next user turn after this summary is anything other than empty / affirmative / `go`, cancel Phase 4 dispatch and enter the modify/cancel branch owned by `ohaze:finishing`. Product-language only; do not show task-level implementation detail unless the user explicitly asks.
+Use exactly two choices:
+
+- `go` — **Recommended**. Proceed to Phase 4 dispatch.
+- `打断` — Pause before dispatch and enter the modify/cancel branch owned by `ohaze:finishing`.
+
+Default-go semantics in v2.1 mean the recommended choice is `go` and the prompt is intentionally minimal; it does **not** mean dispatching before haze has an input boundary. If haze chooses `go`, proceed to Phase 4 immediately in the same resumed turn. If haze chooses `打断` or provides other non-go content, do not dispatch Codex; route to the modify/cancel branch. Keep the prompt product-language only and do not show task-level implementation detail unless the user explicitly asks.
 
 ## Phase 4 — Hand Off To Codex (run_in_background, no nohup, no ScheduleWakeup)
 
