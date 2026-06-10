@@ -42,6 +42,7 @@ v2.1 主题:把 haze 从 spec/plan/技术 finding 视野中拿掉。
 - **Reviewer finding schema 增加 `user_impact_description`**（spec §审查输出产品语言翻译机制；`feat(codex-executor): user_impact`）：CRITICAL/IMPORTANT 仍自动修，ADVERSARIAL 只展示产品语言影响，纯技术细节默认 skip。
 - **`.ohaze/findings-detail.json` 持久化**（spec §持久化；`feat(codex-executor): findings-detail.json`）：保存 evidence / technical_description / user_impact_description / shown_to_user / auto_handled，供 finishing 与 ship-review 读取。
 - **ROADMAP 当前主线切换到 v2.1.0**：v2.0 dogfood / release-prep completion 从 active roadmap 移到 changelog 历史，当前主线只追踪 BDD/TDD restructure。
+- **Phase 3.5 真正的可打断窗口**（reviewer ADVERSARIAL；`fix(ship): Phase 3.5 真正的可打断窗口`）：原 design 同 turn dispatch 让"可打断"成空话；改为 plan 摘要后 2-option `AskUserQuestion`（go / 打断，Recommended go），单 keystroke 保留 vibe coding 的同时让打断窗口真实存在。
 
 ### Migrated
 - **Path convention**（spec §涉及文件改动清单；`chore(release): v2.1.0`）：新产物路径统一迁移到 `docs/ohaze/{briefs,specs,plans}`。
