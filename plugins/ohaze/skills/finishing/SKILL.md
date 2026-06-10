@@ -1,6 +1,6 @@
 ---
 name: finishing
-description: Owns ohaze workflow Phase 7 — project-type detection, finishing menu (6 options; 6th appears only when ADVERSARIAL findings exist), ordered finish-chain execution, document finish (neat-style four-piece routing internalized), and modify sub-flow. Invoked by ship-review.md and ship-finish.md.
+description: Owns ohaze workflow Phase 7 — project-type/category detection, finishing menu (6 options plus conditional Security Review), ordered finish-chain execution, document finish, and modify sub-flow.
 ---
 
 # Finishing (ohaze)
@@ -16,7 +16,9 @@ From the caller (read from `.ohaze/current-ship.json` + the latest verdict file)
 - `plan_path`, `spec_path`
 - `retries`, `linked_todo`
 - `thread_id` (for modify 2a + 6th-option ADVERSARIAL fix; `codex exec resume <thread_id>` without `--sandbox`)
-- `review_verdict_path` — `<worktree_path>/.ohaze/review-verdict.json` (consumed for ADVERSARIAL items + DOC-DRIFT items)
+- `review_verdict_path` — `<worktree_path>/.ohaze/review-verdict.json` (consumed for verdict + DOC-DRIFT items)
+- `findings_detail_path` — `<worktree_path>/.ohaze/findings-detail.json` (single source of truth for ADVERSARIAL display)
+- optional `brief_path` — used to inspect brief metadata such as `has_external_input: true`
 - optional: `codex_bg_id`, `project_test_command`
 
 ## Detect Project Type
@@ -31,6 +33,18 @@ remote_name=$(git -C "$main_repo_path" remote 2>/dev/null | head -1)
 - Any remote output means `project_type = "remote"`.
 
 Write the detected `project_type` field back into `.ohaze/current-ship.json` (Write tool, structural safety — no hook dependency).
+
+Also detect and write `project_category` into `.ohaze/current-ship.json` using Read-modify-Write (read full file, preserve all fields, override `project_category` only). This is separate from `project_type`: `project_type` remains `local | remote` for finish preferences; `project_category` is `web | api | cli | plugin | agent | other` for Security Review routing.
+
+Heuristic:
+
+- Read manifest names and scripts (`package.json`, app framework config, API server files), plus brief/spec keywords if available.
+- `web`: browser UI, Next/Vite/React app, public frontend.
+- `api`: HTTP endpoints, webhooks, server routes, public service boundary.
+- `cli`: command-line tool.
+- `plugin`: Claude/Codex plugin or skill package.
+- `agent`: autonomous workflow/agent runtime.
+- `other`: default if uncertain.
 
 ## Finish Preferences
 
@@ -55,16 +69,32 @@ Before asking, print:
 
 - Detected `project_type`: `local` or `remote`
 - Full recommended chain, in order, so the user can see exactly what option 1 will do
-- Whether ADVERSARIAL findings are present in `review_verdict_path.issues` (gates whether option 6 appears)
+- Whether ADVERSARIAL findings are present in `findings-detail.json` with `user_impact_description != null` (gates whether option 6 appears)
+- Whether the conditional Security Review item is available.
 
-Read `review_verdict_path` and compute:
+Read `<worktree_path>/.ohaze/findings-detail.json` and compute:
 
 ```
-adversarial = [i for i in verdict.issues if i.startswith("ADVERSARIAL:")]
-has_adversarial = len(adversarial) > 0
+findings = detail.findings or []
+adversarial_user_facing = [
+  f for f in findings
+  if f.severity == "ADVERSARIAL" and f.user_impact_description != null
+]
+skipped_adversarial_count = len([
+  f for f in findings
+  if f.severity == "ADVERSARIAL" and f.user_impact_description == null
+])
+has_adversarial = len(adversarial_user_facing) > 0
 ```
 
-Use `AskUserQuestion` with the menu. The menu has **6 options when `has_adversarial`**, **5 options otherwise** (the 6th is conditionally shown):
+Security Review trigger:
+
+| Trigger | Source |
+|---|---|
+| `project_category in {web, api}` | `.ohaze/current-ship.json.project_category` written above |
+| `has_external_input: true` | brief metadata, or explicit brief/spec language about external user input |
+
+Use `AskUserQuestion` with the menu. The menu has **6 options when `has_adversarial`**, **5 options otherwise**, and may show a 7th conditional item:
 
 1. 执行推荐收尾 (一键到底)
 2. 继续修改
@@ -72,6 +102,7 @@ Use `AskUserQuestion` with the menu. The menu has **6 options when `has_adversar
 4. 先不处理 (worktree 留着, 稍后 `/ohaze:ship-finish`)
 5. 自定义收尾方案
 6. **修复对抗审查后收尾** (仅当存在 ADVERSARIAL findings — 见 §6th Option below)
+7. 安全审查 (可选,适用于 web/API 项目) (仅当 Security Review trigger 命中)
 
 Option 4 does nothing destructive. Update `.ohaze/current-ship.json` so `state = "kept"`, then tell the user the worktree path and that `/ohaze:ship-finish` resumes the workflow.
 
@@ -85,9 +116,27 @@ Then execute that chain with the same step contract as the recommended chain.
 
 ## 6th Option: 修复对抗审查后收尾 (conditional, ADVERSARIAL-driven)
 
-This option only appears in the menu when the latest `review-verdict.json.issues` contains entries prefixed `ADVERSARIAL:`. Selecting it runs an ADVERSARIAL-fix mini-loop before any terminal action:
+This option only appears in the menu when `<worktree_path>/.ohaze/findings-detail.json` contains ADVERSARIAL findings where `user_impact_description != null`. Pure technical ADVERSARIAL findings are skipped by default and stay inspectable in `.ohaze/findings-detail.json`.
 
-1. **Select which ADVERSARIAL items to fix.** Use `AskUserQuestion` (multi-select) listing the ADVERSARIAL findings verbatim. The user can pick any subset (including all). If they pick none, return to the menu unchanged.
+Before selection, display only product-language findings:
+
+```
+📋 Reviewer 审查完毕
+
+🔴 CRITICAL / IMPORTANT: <N> 条 — Codex 在 retry loop 修复中(无需 haze 介入)
+
+🟡 ADVERSARIAL (user-facing,需要你决策): <M> 条
+  1. <user_impact_description>
+     建议: fix(改 Y) / accept(接受这个 tradeoff)
+  2. ...
+
+🟢 已 skip 的纯技术细节: <K> 条
+   → 完整清单: .ohaze/findings-detail.json
+```
+
+Selecting it runs an ADVERSARIAL-fix mini-loop before any terminal action:
+
+1. **Select which ADVERSARIAL items to fix.** Use `AskUserQuestion` (multi-select) listing `user_impact_description` only. Do not surface raw `evidence`, file paths, function names, or `technical_description` in the haze-facing menu. The selected findings still carry technical detail from `findings-detail.json` into the Codex fix prompt.
 
 2. **Build a fix prompt** mirroring `ohaze:codex-executor` Phase 6's structure (issues + anti-regression + action-safety + verification-loop), but with the selected ADVERSARIAL items as `<task>` content. Be explicit that these are design-level concerns the user has accepted as actionable.
 
@@ -115,6 +164,42 @@ This option only appears in the menu when the latest `review-verdict.json.issues
 6. **Re-run review** (asked, not automatic — give the user a choice "要复验吗?"). Re-review does NOT increment the retry counter (user-initiated, not reviewer-driven). If FAIL on re-review, loop back to the menu so the user can decide next steps. If PASS (or skipped), proceed to the chosen finish chain.
 
 7. **Then execute the finish chain** (whatever the user picks afterward — recommended or custom).
+
+## 7th Option: Security Review (conditional)
+
+Menu label:
+
+```text
+7. 安全审查 (可选,适用于 web/API 项目)
+```
+
+Show this item when either trigger is true:
+
+- `project_category in {web,api}` from `current-ship.json`.
+- Brief metadata or inferred brief/spec language has `has_external_input: true`.
+
+When selected, dispatch a one-shot Codex review, foreground and synchronous, borrowing `/cso`-style coverage:
+
+- Review OWASP Top 10.
+- Review STRIDE.
+- Confidence gate: only report findings with confidence ≥ 8/10.
+- Every finding MUST include a concrete exploit scenario, not a vague theoretical issue.
+- Every finding MUST include `user_impact_description` using the Task 4 product-language contract.
+
+Security review findings are written into `<worktree_path>/.ohaze/findings-detail.json` as ADVERSARIAL findings, then merged into the existing 6th-option flow:
+
+```json
+{
+  "severity": "ADVERSARIAL",
+  "evidence": "<file:line + quoted text>",
+  "technical_description": "<security issue + concrete exploit scenario>",
+  "user_impact_description": "<product-language impact, or null only if purely technical>",
+  "shown_to_user": <true when displayed through option 6>,
+  "auto_handled": null
+}
+```
+
+Append or merge these findings by reading the existing detail file, preserving existing fields, adding the new ADVERSARIAL entries, and writing the full object back. Then return to the menu so haze can use option 6 to fix or accept.
 
 ## Chain Execution Contract
 
