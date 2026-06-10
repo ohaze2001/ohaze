@@ -99,22 +99,29 @@ Wait for user choice.
 
 ## Phase 6.5 — Surface ADVERSARIAL findings (if any)
 
-Before the finishing menu, check `<worktree>/.ohaze/review-verdict.json.issues` for entries prefixed `ADVERSARIAL:`.
+Before the finishing menu, read `<worktree_path>/.ohaze/findings-detail.json` and filter for `severity == "ADVERSARIAL"`.
 
-If yes, print them verbatim to the user **without commentary**:
+Show only ADVERSARIAL findings where `user_impact_description != null`. Never surface raw `evidence`, file paths, line numbers, function names, or `technical_description` in the haze-facing menu. Use product language only:
 
 ```
 ⚠️ Reviewer 提出的对抗式发现 (不阻塞 ship, 设计层判断, 你来决定要不要处理):
 
-  - ADVERSARIAL: <design risk> — <file:line>
-  - ADVERSARIAL: <design risk> — <file:line>
+🔴 CRITICAL / IMPORTANT: <N> 条 — Codex 在 retry loop 修复中(无需 haze 介入)
 
-如要批量修复后再收尾, finishing 菜单会出现「修复对抗审查后收尾」项 (仅当有 ADVERSARIAL 时存在).
+🟡 ADVERSARIAL (user-facing,需要你决策): <M> 条
+  1. <user_impact_description>
+     建议: fix(改 Y) / accept(接受这个 tradeoff)
+  2. ...
+
+🟢 已 skip 的纯技术细节: <K> 条
+   → 完整清单: .ohaze/findings-detail.json
 ```
+
+The skipped count is the number of ADVERSARIAL findings whose `user_impact_description == null`. The full technical record remains in `.ohaze/findings-detail.json` for on-demand inspection.
 
 Then proceed to Phase 7. Do not auto-loop into modify — the user decides whether to act on ADVERSARIAL items via the 6th finishing menu option.
 
-If no ADVERSARIAL findings, skip this section silently.
+If there are no ADVERSARIAL findings with product-language impact, skip this section silently.
 
 ## Phase 7 — Invoke `ohaze:finishing`
 
