@@ -1,4 +1,6 @@
 .ohaze/
+.ohaze/spec-review-verdict.json
+.ohaze/findings-detail.json
 .worktrees/
 .claude/scheduled_tasks.lock
 .DS_Store

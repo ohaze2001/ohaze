@@ -4,23 +4,20 @@
 > Agent 行为指导看 CLAUDE.md. 项目自描述看 README.md.
 
 ## 当前主线
-v2.0.0 重构：零运行时外部 skill 依赖 + vault 流程层剥离 + 修核心坑（nohup/ScheduleWakeup 幽灵唤醒、cwd 悬空、resume sandbox）。
+v2.1.0 BDD/TDD restructure：haze 只 approve brief，Claude 自动写 spec，Codex 反审 spec，plan 默认推进，review finding 转产品语言。
 
-- [x] superpowers 全解耦（fork 子集 brainstorming + using-git-worktrees + writing-plans）
-- [x] vault 剥离（删 hooks/adapter/VAULT-CONTEXT）
-- [x] codex 后台换血（run_in_background 替 nohup；harness re-invoke 替 ScheduleWakeup；幂等状态门）
-- [x] codex exec resume 去 `--sandbox`（codex 0.137 实测修复）
-- [x] 流程序 brainstorm → worktree → spec（main 干净）
-- [x] 显式项目路径参数（`--project`）
-- [x] finishing 6 项菜单（第 6 项「修复对抗审查后收尾」conditional）+ doc-finish 内化 neat 路由
-- [x] 异源审查强化（实跑 project_test_command + 卡住升级诊断）
-- [x] 四件套文档对齐 + 修死链
-- [x] 静态自审闭环：两轮 `/code-review high` → 19 findings（F1–F10 + R1–R9）全修，详见 CHANGELOG「Release-prep fixes」
-- [ ] dogfood 实证（装机后端到端跑 throwaway ship；通过后 tag `v2.0.0`）
+- [x] Phase 1 BDD-flavored brainstorming：7 forcing hints + feature brief + 4-mode scope reflection
+- [x] Phase 1.5 Claude auto-spec：mandatory code-reading + 5 类边界单点问 + brief 技术方向回填
+- [x] Phase 1.6 `spec-to-codex-review`：Codex 异源审 spec，max-2 loop
+- [x] Phase 3.5 plan summary + default-go：不再让 haze 读完整 plan 才能继续
+- [x] Phase 6 `<investigate_first>`：retry 前先根因诊断
+- [x] Phase 7 conditional Security Review + ADVERSARIAL 产品语言展示
+- [x] 路径迁移到 `docs/ohaze/{briefs,specs,plans}`
 
 ## Backlog
 - 定期 diff superpowers v5.1.0 上游 brainstorming / using-git-worktrees SKILL.md（基线漂移监控）
 - 持久化 Codex 输出（`codex-executor` Phase 4 `tee` `--json` 到 `<worktree>/.ohaze/codex-output.jsonl`），使 doc-finish 真相源跨 session 可用，消除 F9 的 fallback 降级
+- 如果观察到 plan-drift rate 超过可接受阈值，再加 plan Codex/Claude dry-run audit；当前 v2.1 先依赖 spec audit + implementation review 双闸。
 
 ## Bug
 - （v2.0.0 发版前清空；后续发现登记于此）

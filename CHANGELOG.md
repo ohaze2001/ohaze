@@ -20,10 +20,31 @@
 ### Removed
 
 ### Planned
-- **2.1.0** — 集成验证 dogfood + 上游 fork 基线漂移监控（详见 ROADMAP.md Backlog）
 - **未来某版** — tool-router（按任务复杂度自动路由 Codex / Claude / Gemini / DeepSeek，从 v1.x Planned 顺延，待 v2 稳定后重启评估）
 
 ### Backlog
+
+---
+
+## [2.1.0] - 2026-06-10
+
+v2.1 主题:把 haze 从 spec/plan/技术 finding 视野中拿掉。
+
+### Added
+- **BDD-flavored Phase 1**（spec §Phase 1；`feat(brainstorming): BDD-flavored Phase 1`）：brainstorming 改成 pain / reframe / user / visible outcome / out-of-scope / capability / scope 4-modes，终态为 brief approved。
+- **Phase 1.5 auto-spec**（spec §Phase 1.5；`feat(ship): Phase 1.5 spec 自动写`）：Claude mandatory code-reading 后自动从 brief 写 spec，并把关键技术方向回填 brief。
+- **Phase 1.6 `spec-to-codex-review`**（spec §Phase 1.6；`feat(spec-to-codex-review): 新 skill 封装 Codex 反向审 spec XML prompt`）：Codex 用 fresh `codex exec` 异源审 spec，输出 `.ohaze/spec-review-verdict.json`。
+- **Phase 3.5 default-go**（spec §Phase 3.5；`feat(ship): Phase 3.5 default-go`）：plan 只给一行摘要，默认继续进 Codex 实现，保留打断能力。
+- **Phase 7 Security Review**（spec §Phase 7；`feat(finishing): 7th 安全审查`）：web/API 或外部输入场景可选 OWASP Top 10 + STRIDE 审查，confidence ≥ 8 且必须有 concrete exploit scenario。
+
+### Changed
+- **Phase 6 retry prompt 加 `<investigate_first>`**（spec §Phase 6；`feat(codex-executor): investigate_first`）：Codex retry 改代码前必须先写根因诊断，和主线程 stuck-detection 叠加。
+- **Reviewer finding schema 增加 `user_impact_description`**（spec §审查输出产品语言翻译机制；`feat(codex-executor): user_impact`）：CRITICAL/IMPORTANT 仍自动修，ADVERSARIAL 只展示产品语言影响，纯技术细节默认 skip。
+- **`.ohaze/findings-detail.json` 持久化**（spec §持久化；`feat(codex-executor): findings-detail.json`）：保存 evidence / technical_description / user_impact_description / shown_to_user / auto_handled，供 finishing 与 ship-review 读取。
+- **ROADMAP 当前主线切换到 v2.1.0**：v2.0 dogfood / release-prep completion 从 active roadmap 移到 changelog 历史，当前主线只追踪 BDD/TDD restructure。
+
+### Migrated
+- **Path convention**（spec §涉及文件改动清单；`chore(release): v2.1.0`）：新产物路径统一迁移到 `docs/ohaze/{briefs,specs,plans}`。
 
 ---
 
