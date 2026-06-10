@@ -1,137 +1,136 @@
 ---
 name: brainstorming
-description: Use before any creative work in the ohaze ship flow — features, components, behavior changes. Explores user intent, requirements, and design through one-question-at-a-time dialogue. Terminates at user-approved design; does NOT write a spec file or invoke writing-plans (those are owned by /ohaze:ship Phase 2 after a worktree exists).
+description: Use before creative work in the ohaze ship flow to run BDD/needs-side discovery, produce a user-language feature brief, and terminate at brief approved.
 ---
 
-# Brainstorming Ideas Into Designs (ohaze)
+# Brainstorming Feature Briefs (ohaze)
 
-Help turn ideas into fully formed designs through natural collaborative dialogue. **This fork terminates at user-approved design.** It does not write a spec file and does not invoke writing-plans. In the ohaze ship flow, the design is written to a spec file in `/ohaze:ship` Phase 2 — *after* a worktree exists — so the spec commit lands on the feature branch and `main` stays untouched.
+This skill owns `/ohaze:ship` Phase 1. It keeps the conversation in product and requirement language: pain, user, scenarios, visible outcome, boundaries, capability, and scope mode. It does not ask haze to review implementation detail.
 
-Start by understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design and get user approval. **Stop there.**
+The output of Phase 1 is an approved feature brief in conversation. This fork does **not** write a spec file, does **not** invoke `ohaze:writing-plans`, and does **not** recap a full technical design back to haze. `/ohaze:ship` Phase 1.5 writes the spec later.
 
 <HARD-GATE>
-Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it. This applies to EVERY project regardless of perceived simplicity.
+Do NOT write code, scaffold files, write a spec, invoke writing-plans, or take implementation action in this skill. Stop only after the user has approved the feature brief and control has been handed back to `/ohaze:ship`.
 </HARD-GATE>
 
-## Anti-Pattern: "This Is Too Simple To Need A Design"
+## Conversation Rhythm
 
-Every project goes through this process. A todo list, a single-function utility, a config change — all of them. "Simple" projects are where unexamined assumptions cause the most wasted work. The design can be short (a few sentences for truly simple projects), but you MUST present it and get approval.
+Ask one question at a time. Prefer multiple choice when it helps haze answer quickly, but use open-ended questions when the user’s language is still fuzzy.
 
-## Checklist
+The goal is a BDD-flavored brief:
 
-You MUST create a task for each of these items and complete them in order:
+- What pain or unmet need exists.
+- Who triggers or uses the feature.
+- Which user场景 matter.
+- What visible result tells the user it worked.
+- Which outcomes are explicitly out of scope.
+- Which capability list the feature must satisfy.
+- Which scope mode is being chosen.
 
-1. **Explore project context** — check files, docs, recent commits
-2. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
-3. **Propose 2-3 approaches** — with trade-offs and your recommendation
-4. **Present design** — in sections scaled to their complexity, get user approval after each section
-5. **Design self-review (inline, conversational)** — quick check for placeholders, contradictions, ambiguity, scope; fix inline before declaring "design approved"
-6. **Declare terminal state** — confirm "design approved" to the user and stop. Do NOT write a spec file. Do NOT invoke writing-plans. The caller (`/ohaze:ship` Phase 2) handles those.
+## 7 Forcing-Question Hints
 
-## Process Flow
+These are flexible hints, not a strict ordered checklist. The LLM decides order, omission, follow-up depth, and phrasing based on context. Do not force all seven if the answer is already clear; do follow up when the user’s answer would make the brief ambiguous.
 
-```dot
-digraph brainstorming {
-    "Explore project context" [shape=box];
-    "Ask clarifying questions" [shape=box];
-    "Propose 2-3 approaches" [shape=box];
-    "Present design sections" [shape=box];
-    "User approves design?" [shape=diamond];
-    "Inline self-review (fix in dialogue)" [shape=box];
-    "Declare design approved (terminate)" [shape=doublecircle];
+| Category | Ask For |
+|---|---|
+| Pain | 具体痛在哪? Ask for a specific example, not a hypothetical. |
+| Reframe push-back | "You asked for X, but it sounds like the need is Y. Confirm?" |
+| User | Who uses/triggers/calls this, and in what situation? |
+| Visible outcome | After using it, what does the user see or experience differently? |
+| Out of scope | Which scenarios should explicitly not be handled? |
+| Capability extraction | "It sounds like this must do 1/2/3/4/5. What is missing?" |
+| Scope 4-modes | Recommend Expansion / Selective Expansion / Hold Scope / Reduction with a reason; haze approves or pushes back. |
 
-    "Explore project context" -> "Ask clarifying questions";
-    "Ask clarifying questions" -> "Propose 2-3 approaches";
-    "Propose 2-3 approaches" -> "Present design sections";
-    "Present design sections" -> "User approves design?";
-    "User approves design?" -> "Present design sections" [label="no, revise"];
-    "User approves design?" -> "Inline self-review (fix in dialogue)" [label="yes"];
-    "Inline self-review (fix in dialogue)" -> "Declare design approved (terminate)";
-}
+## Scope Reflection
+
+Before declaring the brief approved, propose exactly one scope mode and explain the reason in product language:
+
+- **Expansion**: the stated need is too narrow and should include adjacent user-visible capability.
+- **Selective Expansion**: add only the one or two adjacent capabilities needed for a coherent workflow.
+- **Hold Scope**: the requested scope is coherent as-is.
+- **Reduction**: remove part of the request to keep the first ship focused and testable.
+
+Ask haze to approve or push back. Record the final mode in the brief.
+
+## Feature Brief Template
+
+When the conversation is clear, present the feature brief using this template. Keep it readable for haze.
+
+```markdown
+# <feature 名> — Feature Brief
+> 给 haze 看。spec 在 docs/ohaze/specs/... 给 Codex 看,你不用看。
+
+## 这是干嘛的
+<一句话产品定位 — reframed 之后的,可能跟你最初说的不一样>
+
+## 给谁用
+<调用者/用户/触发者>
+
+## 用户场景 (Scenarios)
+### Scenario 1: <happy path 名>
+- Given <初始状态>
+- When <用户做的事>
+- Then <看到的结果>
+
+### Scenario 2: <边界>
+### Scenario 3: <失败/恢复>
+
+## "完成的样子" Checklist
+- [ ] 能 ...
+- [ ] 不能 ...
+- [ ] 失败时能 ...
+
+## 不做什么 (Out of Scope)
+- ...
+
+## Scope 决策
+- **模式**: <Expansion | Selective Expansion | Hold Scope | Reduction>
+- **理由**: <一句话>
+
+## Claude 替你决定的关键技术方向 (Phase 1.5 后回填,事后扫一眼)
+- <一句话每条,不同意 push back>
 ```
 
-**The terminal state is "design approved" — nothing more.** Do NOT write to `docs/superpowers/specs/`. Do NOT invoke `ohaze:writing-plans` or `superpowers:writing-plans` or `frontend-design` or any other implementation skill. The ONLY thing you do after design approval is hand control back to the caller.
+## Approval And Self-Review
 
-## The Process
+After haze approves the brief, do a short inline self-review before terminal:
 
-**Understanding the idea:**
+1. Placeholder scan: no `TBD`, empty scenario, or vague checklist item remains.
+2. Scenario consistency: each "完成的样子" item maps to at least one scenario or visible result.
+3. Scope consistency: out-of-scope items do not contradict the checklist.
+4. Ambiguity check: if a user-visible behavior has two reasonable interpretations, ask one more single-point question.
 
-- Check out the current project state first (files, docs, recent commits)
-- Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
-- If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Each sub-project gets its own brainstorm → spec → plan → implementation cycle.
-- For appropriately-scoped projects, ask questions one at a time to refine the idea
-- Prefer multiple choice questions when possible, but open-ended is fine too
-- Only one question per message — if a topic needs more exploration, break it into multiple questions
-- Focus on understanding: purpose, constraints, success criteria
+Fix issues in conversation only. Do not write a separate review file.
 
-**Exploring approaches:**
+## Terminal State
 
-- Propose 2-3 different approaches with trade-offs
-- Present options conversationally with your recommendation and reasoning
-- Lead with your recommended option and explain why
+The terminal state is `brief approved`.
 
-**Presenting the design:**
+Say:
 
-- Once you believe you understand what you're building, present the design
-- Scale each section to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
-- Ask after each section whether it looks right so far
-- Cover: architecture, components, data flow, error handling, testing
-- Be ready to go back and clarify if something doesn't make sense
+> "Brief approved. Handing back to /ohaze:ship Phase 2 — it will create worktree and write this brief + spec inside the worktree."
 
-**Design for isolation and clarity:**
+This "Handing back" is a return-from-subroutine signal, NOT an end-of-turn signal. Your next action in the same assistant turn belongs to `/ohaze:ship`, which proceeds through Phase 1.5 / 1.6 / 2. Do not wait for the user to type anything after approval.
 
-- Break the system into smaller units that each have one clear purpose, communicate through well-defined interfaces, and can be understood and tested independently
-- For each unit, you should be able to answer: what does it do, how do you use it, and what does it depend on?
-- Can someone understand what a unit does without reading its internals? Can you change the internals without breaking consumers? If not, the boundaries need work.
-- Smaller, well-bounded units are also easier to work with — you reason better about code you can hold in context at once, and your edits are more reliable when files are focused. When a file grows large, that's often a signal that it's doing too much.
+The caller will:
 
-**Working in existing codebases:**
+- Generate the Phase 1.5 spec from the approved brief.
+- Run the Phase 1.6 Codex spec audit.
+- Create the worktree.
+- Write both `docs/ohaze/briefs/<date>-<slug>-brief.md` and `docs/ohaze/specs/<date>-<slug>-design.md`.
+- Invoke `ohaze:writing-plans`.
 
-- Explore the current structure before proposing changes. Follow existing patterns.
-- Where existing code has problems that affect the work (e.g., a file that's grown too large, unclear boundaries, tangled responsibilities), include targeted improvements as part of the design — the way a good developer improves code they're working in.
-- Don't propose unrelated refactoring. Stay focused on what serves the current goal.
-
-## After the Design (terminate cleanly)
-
-**Inline self-review** (in the same conversation, not a file):
-
-After the user approves the design, do a quick fresh-eyes pass on the agreed design and fix anything ambiguous in dialogue before declaring terminal:
-
-1. **Placeholder scan:** Any "TBD", "TODO", incomplete sections, or vague requirements? Clarify with one more question.
-2. **Internal consistency:** Do any sections contradict each other? Does the architecture match the feature descriptions?
-3. **Scope check:** Is this focused enough for a single implementation plan, or does it need decomposition?
-4. **Ambiguity check:** Could any requirement be interpreted two different ways? If so, pick one with the user and make it explicit.
-
-Fix any issues in conversation. Do not write a separate review file.
-
-**Terminate cleanly:**
-
-> "Design approved. Handing back to /ohaze:ship Phase 2 — it will set up the worktree and write this design to a spec file inside the worktree."
-
-**This "Handing back" is a return-from-subroutine signal, NOT an end-of-turn signal.** Your very next action in the SAME assistant turn MUST be the Phase 2a `Skill(ohaze:using-git-worktrees)` invocation from `/ohaze:ship`. Do NOT end the turn. Do NOT wait for the user to type anything (they have nothing to type — they already approved). If you find yourself stopping after the "Design approved" line, you are misreading the protocol — this skill returns control to the orchestrator, it does not yield the turn to the user.
-
-The caller (`/ohaze:ship`) will then:
-- Create the worktree (`ohaze:using-git-worktrees`)
-- Write the approved design to `docs/superpowers/specs/<date>-<slug>-design.md` and commit it on the feature branch
-- Invoke `ohaze:writing-plans` to produce the implementation plan
-
-You do not perform any of those steps. **Do not write the spec file. Do not invoke writing-plans.** But you DO immediately proceed to Phase 2a in the same turn — that is the whole point of "handing back."
+You do none of those steps inside this skill.
 
 ## Key Principles
 
-- **One question at a time** — Don't overwhelm with multiple questions
-- **Multiple choice preferred** — Easier to answer than open-ended when possible
-- **YAGNI ruthlessly** — Remove unnecessary features from all designs
-- **Explore alternatives** — Always propose 2-3 approaches before settling
-- **Incremental validation** — Present design, get approval before moving on
-- **Be flexible** — Go back and clarify when something doesn't make sense
-- **Terminate at approved design** — do NOT write spec, do NOT invoke writing-plans
+- One question at a time.
+- User and visible result before implementation detail.
+- Multiple choice when it reduces friction.
+- Flexible forcing hints, not a scripted interrogation.
+- Product-language brief first; spec later.
+- End only at `brief approved` and explicit handoff.
 
 ## Attribution
 
-Forked from the `brainstorming` skill in [obra/superpowers](https://github.com/obra/superpowers) v5.1.0 by Jesse Vincent, used under MIT license. The dialogue rhythm, HARD-GATE, anti-pattern guidance, "design for isolation", and "working in existing codebases" sections are preserved near-verbatim. The ohaze fork:
-
-1. **Removes the upstream browser-based mockup mechanism** (the web-server + helper scripts that let brainstorming render diagrams/wireframes in a browser) — the ohaze ship flow is text-only and gains nothing from that overhead.
-2. **Changes the terminal state** from "write spec to file + invoke writing-plans" to "declare design approved + hand back to caller". In ohaze v2.0.0 the spec is written by `/ohaze:ship` Phase 2 *after* a worktree is created, so the spec commit lands on the feature branch and `main` stays untouched.
-
-> **Locked baseline:** superpowers v5.1.0. Periodically `diff` the upstream `brainstorming/SKILL.md` against this fork to spot drift in shared dialogue/process behavior; the two ohaze deviations (no companion + terminate-at-approved) are intentional and stay.
+Forked from the `brainstorming` skill in [obra/superpowers](https://github.com/obra/superpowers) v5.1.0 by Jesse Vincent, used under MIT license. The ohaze fork keeps the one-question-at-a-time discipline and hard gate, but v2.1 moves Phase 1 to BDD/needs-side discovery and hands spec writing to `/ohaze:ship` Phase 1.5.
