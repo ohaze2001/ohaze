@@ -17,8 +17,8 @@ Hand a translated XML prompt to Codex via the `codex` CLI, then run the Claude-s
 
 - `mode` (required, enum): `'dispatch'` for initial Codex run (enter at Phase 4) or `'review'` for re-entry after Codex completion (skip Phase 4, enter at Phase 5.0). Callers `/ohaze:ship` Phase 4 pass `mode='dispatch'`; `/ohaze:ship-review` Phase 5–6 and `/ohaze:ship-finish` Step 2 re-review pass `mode='review'`.
 - `codex_prompt` (required when `mode='dispatch'`): the full XML string from `ohaze:plan-to-codex-prompt`. Ignored when `mode='review'`.
-- `plan_path` (required): the absolute path to the plan markdown, used by the reviewer.
-- `spec_path` (required for `mode='review'`): the absolute path to the spec markdown, substituted into the reviewer prompt template (the `{spec_path}` token in the PART 1 contract-compliance section). Callers `ship.md` Phase 4b / `ship-review.md` / `ship-finish.md` all pass this.
+- `plan_path` (required): the absolute path to the plan markdown under `docs/ohaze/plans/`, used by the reviewer.
+- `spec_path` (required for `mode='review'`): the absolute path to the spec markdown under `docs/ohaze/specs/`, substituted into the reviewer prompt template (the `{spec_path}` token in the PART 1 contract-compliance section). Callers `ship.md` Phase 4b / `ship-review.md` / `ship-finish.md` all pass this.
 - `base_ref` (required): the git ref Codex's work started from (typically the worktree's parent branch, e.g. `main`).
 - `worktree_path` (required for review/retry): the ship worktree path.
 - `main_repo_path` (optional, recommended): used only if a fallback (e.g. fresh `codex exec` after exact resume fails) needs to know the main checkout location.
@@ -151,11 +151,16 @@ Agent(
 )
 ```
 
-### Phase 5.3: Write `review-verdict.json`
+### Phase 5.3: Write `review-verdict.json` and `findings-detail.json`
 
 After the reviewer returns, write the verdict to disk. The Write tool is preferred for structural safety (the JSON contains arbitrary user strings; heredocs are quoting hazards), but there is **no hook dependency** — vault has been stripped from ohaze.
 
-Target file: `<worktree_path>/.ohaze/review-verdict.json`.
+Target files:
+
+- `<worktree_path>/.ohaze/review-verdict.json`
+- `<worktree_path>/.ohaze/findings-detail.json`
+
+Write protocol: before overwriting either JSON file, read it if it already exists, preserve unknown top-level fields, and override only the fields owned by this phase (`iteration`, `verdict`, `issues`, `doc_drift` for `review-verdict.json`; `iteration`, `findings` for `findings-detail.json`). This mirrors `ship.md`'s Read-modify-Write rule: read full file → preserve all fields → write the full updated object.
 
 Content shape:
 
@@ -175,11 +180,40 @@ Content shape:
 ```
 
 - **Include all CRITICAL, IMPORTANT, and ADVERSARIAL findings in `issues`** with their prefix preserved. Skip NITs.
+- Each reviewer issue MUST carry `user_impact_description` internally. If the reviewer omits it, normalize to `null` before writing details.
 - Include DOC-DRIFT findings in `doc_drift` as strings. Use `[]` when there is no document drift.
 - For PASS without any ADVERSARIAL findings: `issues` is `[]`.
 - For PASS with ADVERSARIAL findings: include them — they're advisory and consumed by `ohaze:finishing` (specifically the 6th finishing menu option "修复对抗审查后收尾", which only appears when ADVERSARIAL findings exist).
 - For FAIL: include all CRITICAL/IMPORTANT/ADVERSARIAL entries — the user needs the full picture before retry.
 - Do this in **every** iteration of the retry loop, not just on first verdict.
+
+Also write `<worktree_path>/.ohaze/findings-detail.json` as the single source of truth for display routing:
+
+```json
+{
+  "iteration": <current_retry_count>,
+  "findings": [
+    {
+      "severity": "CRITICAL | IMPORTANT | NIT | ADVERSARIAL | NICE-TO-HAVE",
+      "evidence": "<file:line + quoted text>",
+      "technical_description": "<原始技术描述>",
+      "user_impact_description": "<string|null>",
+      "shown_to_user": <bool>,
+      "auto_handled": "retry-fix | skip | null"
+    }
+  ]
+}
+```
+
+Each iteration overwrites `iteration` and `findings`; this file is not an append-only log. Routing:
+
+| Severity | `user_impact_description != null` | `user_impact_description == null` |
+|---|---|---|
+| CRITICAL | auto-retry-fix; record `shown_to_user: false`, `auto_handled: "retry-fix"` | auto-retry-fix; record `shown_to_user: false`, `auto_handled: "retry-fix"` |
+| IMPORTANT | auto-retry-fix; record `shown_to_user: false`, `auto_handled: "retry-fix"` | auto-retry-fix; record `shown_to_user: false`, `auto_handled: "retry-fix"` |
+| ADVERSARIAL | show to user in product language; record `shown_to_user: true`, `auto_handled: null` | default skip; record `shown_to_user: false`, `auto_handled: "skip"` |
+| NIT | default skip; record `shown_to_user: false`, `auto_handled: "skip"` | default skip; record `shown_to_user: false`, `auto_handled: "skip"` |
+| NICE-TO-HAVE | default skip; record `shown_to_user: false`, `auto_handled: "skip"` | default skip; record `shown_to_user: false`, `auto_handled: "skip"` |
 
 ### Review prompt template (实跑验证 + 异源对抗)
 
@@ -230,6 +264,12 @@ This is NOT a stricter pass over PART 1/2. This is a different lens entirely. Ev
 - Findings here go under `ADVERSARIAL:` regardless of severity. They surface design risks the user should consciously accept or revise.
 - **ADVERSARIAL findings do NOT cause FAIL by themselves**. They are advisory. PART 1/2/2.5 issues are what gate ship. The finishing menu's 6th option ("修复对抗审查后收尾") gives the user a structured path to fix accepted ADVERSARIAL items.
 
+Product-language field constraint:
+- Every CRITICAL, IMPORTANT, NIT, ADVERSARIAL, and NICE-TO-HAVE issue object MUST include `user_impact_description`.
+- Use `null` only for purely technical issues with no user-facing or scenario-level impact.
+- When non-null, write product language: describe what user-facing function is incomplete, broken, or degraded.
+- Do NOT put code identifiers, file paths, function names, variable names, or raw line numbers in `user_impact_description`; those belong in `evidence` and `technical_description`.
+
 Return verdict in this exact format:
 
 VERDICT: PASS or FAIL
@@ -237,12 +277,15 @@ VERDICT: PASS or FAIL
 VERDICT is FAIL **if and only if** at least one CRITICAL or IMPORTANT issue exists from PART 1/2/2.5 (including failing real test runs). ADVERSARIAL findings alone never cause FAIL.
 
 If FAIL, list issues by severity:
-- CRITICAL: <issue> — <file:line>
-- IMPORTANT: <issue> — <file:line>
-- NIT: <issue> — <file:line>
+- CRITICAL: {"evidence":"<file:line + quote>","technical_description":"<issue>","user_impact_description":"<product-language string or null>"}
+- IMPORTANT: {"evidence":"<file:line + quote>","technical_description":"<issue>","user_impact_description":"<product-language string or null>"}
+- NIT: {"evidence":"<file:line + quote>","technical_description":"<issue>","user_impact_description":"<product-language string or null>"}
 
 ADVERSARIAL findings (always include if any, regardless of verdict):
-- ADVERSARIAL: <design risk / approach concern> — <file:line or "design-wide">
+- ADVERSARIAL: {"evidence":"<file:line, quote, or design-wide>","technical_description":"<design risk / approach concern>","user_impact_description":"<product-language string or null>"}
+
+NICE-TO-HAVE findings (optional, details-only; never gate):
+- NICE-TO-HAVE: {"evidence":"<file:line + quote>","technical_description":"<improvement>","user_impact_description":"<product-language string or null>"}
 
 DOC-DRIFT findings (always include; use [] if none):
 - DOC-DRIFT: <section>: <失真描述>
@@ -275,6 +318,14 @@ Track retry counter starting at 0; persist in `.ohaze/current-ship.json.retries`
   3. Format a structured fix prompt:
 
      ```
+     <investigate_first>
+     改动任何代码前,先写出根因诊断:
+     - 违反的是哪个 contract / AC?
+     - 上一轮为什么没修对? (具体证据)
+     - 你的根因假设是什么? (证据支撑)
+     如果说不清根因,直接停下报告,不要硬修。
+     </investigate_first>
+
      <task>
      The previous Codex run completed but the cross-source reviewer found these issues. Fix them in the same worktree without changing anything else.
 
@@ -302,6 +353,8 @@ Track retry counter starting at 0; persist in `.ohaze/current-ship.json.retries`
      After fixing, re-run {project_test_command} (or the per-Task acceptance assertions). All must pass before reporting done.
      </verification_loop>
      ```
+
+     `<investigate_first>` is per-retry Codex self-discipline inside the fix prompt: every retry must diagnose root cause before touching code. The stuck-detection diagnosis above is Claude main-loop cross-iteration control outside the prompt. They stack and do not conflict.
 
   4. Read `thread_id` from `.ohaze/current-ship.json`. Write the fix prompt to `<worktree_path>/.ohaze/codex-fix-iter<N>.xml` via Write tool, then dispatch.
 
