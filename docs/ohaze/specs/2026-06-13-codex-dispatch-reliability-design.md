@@ -382,3 +382,34 @@ Produce a single string ready to be written to a prompt file. `ohaze:codex-execu
 - 本次 ship Phase 4 codex initial dispatch 应跑 prompt-as-arg + `< /dev/null` 命令模式
 - 如果 dogfood 期间撞到 codex stdin crash，本 spec 描述的 mitigation 应该真实生效（liveness check kill + retry）
 - 修完 commit + 跑 grep 验证全部 Acceptance 通过
+
+---
+
+## Post-implementation Revert Addendum (2026-06-13)
+
+Cross-source review iter 1（reviewer 异源审查）FAIL 后，haze 拍板 option A — revert 部分 spec 段落。本 addendum 注明 spec 与最终实现的 delta（commit `8d1aa4a`）。
+
+### Reverted 内容
+
+- **Task 1.4 «Background completion protocol»（含 TaskOutput + spec-audit-handoff defensive fallback）整段 revert**：spec 原描述「Phase 1.6 改成 background mode + TaskOutput(block=true) wait + BashOutput filter='message' 抽 verdict + defensive fallback 写 spec-audit-handoff.json」均不再适用。`spec-to-codex-review/SKILL.md` 现 sync return model（命令模板用 prompt-as-arg + `< /dev/null` 已消除 stdin crash 风险，无需 background completion protocol）。
+- **Task 4.4 frontmatter `TaskOutput` allowed-tools 不再加入**：原 spec 要求 ship/ship-review/ship-finish 三个 command frontmatter 加 `KillBash, TaskOutput`；最终仅加 `KillBash`（TaskOutput 不引入，理由：跨 session 稳定性未验证 + 当前实现路径无需）。
+
+### Retained 内容（5 项 surgical fix 全保留）
+
+- Task 1.1-1.3：prompt-as-arg + `< /dev/null` + line 49 反转 + Dispatch Mode Vocabulary cross-ref
+- Task 2 全部：Dispatch Mode Vocabulary anchor + Phase 4 命令模板 + Phase 4 Step 2.5 + Phase 6 retry liveness + no-poll invariant 例外
+- Task 3 全部：finishing 6th-option + modify 2a NOTE
+- Task 4.1-4.3：frontmatter 加 KillBash（TaskOutput 不加）+ Phase 4 段 cross-ref
+- Task 5 全部：plan-to-codex-prompt 去 pipe 描述
+- Task 6 全部：ROADMAP/CHANGELOG 落档
+
+### 新增 dispatch_failed state hygiene（review finding #3 补救）
+
+- `codex-executor/SKILL.md` Phase 4 Step 2.5 + Phase 6 retry：二次失败前 transition `current-ship.json.state=dispatch_failed`（清 codex_bg_id，Phase 4 同清 thread_id，Phase 6 retry 保留 thread_id 供手动 resume）+ 警告文案加 state 信息
+- `ship-review.md` / `ship-finish.md` state gate 加 `dispatch_failed` 分支
+
+### Reviewer 元洞察
+
+本 ship 自身是「spec audit 越审越深」元问题（ROADMAP backlog top）的真实数据点：iter 1 codex 找 4 个 IMPORTANT → 我 spec 扩 Background protocol；iter 2 codex 找 TaskOutput 未文档化 → 我加 cite + defensive fallback；iter 3 minimum fix + accept；cross-source reviewer 异源视角揪出 TaskOutput cross-session 稳定性问题 + orphan handoff，scope drift 一目了然。Per haze decision，revert 后 spec scope 与 brief surgical 范围对齐。
+
+依据：`.ohaze/review-verdict.json` iter 1 + iter 2、commit `8d1aa4a`。

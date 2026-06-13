@@ -275,3 +275,22 @@ TDD Sequence 本地化为「写失败 grep 断言 → 跑确认失败 → 编辑
 - 不要修改 `.claude-plugin/plugin.json` 或 `plugin.json` 中版本号（这次是 Unreleased 状态，发版交后续 ship 处理）
 - 6 个 Task 之间可以并行执行（除明确 cross-task dep）；Task 2 应优先完成（其他 Task cross-ref Dispatch Mode Vocabulary）
 - Task 7 dogfood 验证最后跑一次（汇总所有 acceptance）
+
+---
+
+## Post-implementation Revert Addendum (2026-06-13)
+
+Cross-source review iter 1 FAIL 后 revert（commit `8d1aa4a`）。**Task 1.4 + Task 4.4 部分 acceptance 不再适用最终实现**。详细 delta 见 spec 同名 addendum 段。
+
+### 本 plan 与最终实现的 delta
+
+- **Task 1 acceptance #3-#7**（`TaskOutput`/`spec-audit-handoff`/`thread.started` in spec-to-codex-review/SKILL.md）不再适用 — Background completion protocol 整段 revert
+- **Task 4 acceptance #4-#6**（`grep '^allowed-tools:.*TaskOutput'` 三个 command）不再适用 — frontmatter 只加 KillBash
+- **Task 2-3、Task 5-7 acceptance 全部保留**，Codex 实施后 reviewer iter 2 PASS
+
+### 新增（review finding #3 补救）
+
+- `codex-executor/SKILL.md` Phase 4 Step 2.5 + Phase 6 retry：二次失败前 `state=dispatch_failed` 转换
+- `ship-review.md` + `ship-finish.md` state gate 加 `dispatch_failed` 分支
+
+依据：`.ohaze/review-verdict.json` iter 1 + iter 2、commit `8d1aa4a`。

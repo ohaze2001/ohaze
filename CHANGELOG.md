@@ -15,9 +15,6 @@
 ### Changed
 
 ### Fixed
-- **Codex dispatch reliability hardening / codex-dispatch-reliability**：修复 Bug 2（`codex exec --json` 配合 stdin redirect 偶发 silent crash，导致 thread.started 永不到来、后台任务或前台 sync 卡住）和 Bug 3（`spec-to-codex-review` Phase 1.6 dispatch mode 规约不一致，旧 SKILL:49 写成禁止 background，放大 stdin crash 伤害面）。本次修法包含 5 点：① 顶层 `codex exec` 改为 prompt-as-arg，并用 `< /dev/null` 关闭 stdin；② Phase 6 retry 的 `codex exec resume` 因 codex 0.137 不接受 PROMPT arg，保留 stdin redirect 但新增 30s `thread.started` liveness check、KillBash、同 prompt 重试 1 次；③ finishing 6th-option + modify 2a 保持必要 foreground sync + tee，同时补 stdin silent crash NOTE 和 Ctrl-C / 重选菜单救场步骤；④ `codex-executor` 新增 Dispatch Mode Vocabulary anchor，统一区分 harness background、禁止的 OS-level background、以及仅 finishing 例外的 foreground sync；⑤ `spec-to-codex-review` 反转旧 SKILL:49 语义，明确要求 `Bash(run_in_background: true)` harness background，并用 TaskOutput 完成协议兜底。spec audit 历史一并落档：iter 1 修 4，iter 2 修 3，iter 3 最小 fix #1 后 accept。
-- **brainstorming → ship Phase 2 hand-off 卡死（dogfood 实测）**：`brainstorming/SKILL.md` 终止协议写 "Then STOP"，LLM 把它当对话默认意（end of turn = 等用户），在 "Design approved" 之后停下来不进 Phase 2a，要 haze 戳「卡住了？」才回神。根因是 ohaze fork 把上游 brainstorming 的「自己钻进下一个 skill」改成「declare approved + hand back to caller」时，hand-off 的「立即返回 + 同 turn 继续」语义没有显式协议化。修复：`brainstorming/SKILL.md` 终止段加「return-from-subroutine signal, NOT end-of-turn signal」明文 + `commands/ship.md` Phase 1 末尾加 Phase 1→2 hand-off invariant。
-- **Phase 1 brief approval gate 缺失（2026-06-13 dogfood 观察 — main agent 偶发自动 declare brief approved 直接进 Phase 1.5，跳过 haze 拍板）**：`brainstorming/SKILL.md` 整段假设 `brief approved` 是一个状态，但全文从未定义触发条件——既没说 haze 必须显式说同意词，也没禁止 main agent 自己 declare。结果 main agent 偶尔判断「brief template 填完了」就直接 hand-off。修复：① `brainstorming/SKILL.md` 新增「Brief Approval Gate (BLOCKING)」段（位于「Approval And Self-Review」前），明确 explicit assent 触发词白名单、明确 forbidden self-declaration、明确 fail-safe（找不到 haze explicit assent 消息 = NOT in terminal state） ② SKILL.md「Approval And Self-Review」第一句加「explicitly」修饰 ③ SKILL.md「Terminal State」段加 fail-safe 提醒 ④ `commands/ship.md` Phase 1 在 hand-off invariant 之前加独立「Phase 1 BLOCKING gate」blockquote，强调 gate 是 haze 信号不是 main agent 判断、gate 是 BLOCKING vs hand-off 是 NON-BLOCKING 两者独立。
 
 ### Removed
 
@@ -25,6 +22,17 @@
 - **未来某版** — tool-router（按任务复杂度自动路由 Codex / Claude / Gemini / DeepSeek，从 v1.x Planned 顺延，待 v2 稳定后重启评估）
 
 ### Backlog
+
+---
+
+## [2.1.1] - 2026-06-13
+
+v2.1.1 主题：ship 流程内部硬化 — brainstorm hand-off 协议化、Phase 1 brief approval gate 显式化、Codex dispatch 可靠性 + dispatch_failed state hygiene。
+
+### Fixed
+- **Codex dispatch reliability hardening / codex-dispatch-reliability（含 cross-source review fail 后 revert）**：修复 Bug 2（`codex exec --json` 配合 stdin redirect 偶发 silent crash，导致 thread.started 永不到来、后台任务或前台 sync 卡住）和 Bug 3（`spec-to-codex-review` Phase 1.6 dispatch mode 规约不一致，旧 SKILL:49 写成禁止 background，放大 stdin crash 伤害面）。最终落地修法 5 点：① 顶层 `codex exec` 改为 prompt-as-arg + `< /dev/null` 关闭 stdin；② Phase 6 retry 的 `codex exec resume` 因 codex 0.137 不接受 PROMPT arg 保留 stdin redirect，新增 30s `thread.started` liveness check + KillBash + 同 prompt 重试 1 次 + 二次失败转 `state=dispatch_failed` (清 codex_bg_id) 防 dangling running state；③ finishing 6th-option + modify 2a 保持必要 foreground sync + tee，补 stdin silent crash NOTE + Ctrl-C 救场步骤；④ `codex-executor` 新增 Dispatch Mode Vocabulary anchor 统一区分 harness background / 禁止的 OS-level background / finishing 例外的 foreground sync (4 个文件 cross-ref)；⑤ `spec-to-codex-review` SKILL:49 旧歧义规约「Do NOT run in background」反转为术语澄清版本 (cross-ref Dispatch Mode Vocabulary)。Phase 4 Step 2.5 + ship-review/ship-finish state gate 加 `dispatch_failed` 分支。spec audit 历史一并落档：iter 1 修 4，iter 2 修 3，iter 3 最小 fix #1 后 accept。**Cross-source reviewer 在 iter 1 揪出 spec audit 自己掉进 ROADMAP backlog 已标注的「越审越深」trap**——Spec Task 1.4 引入了 `Background completion protocol` (含 `TaskOutput` cite + `spec-audit-handoff.json` orphan defensive fallback)，超 brief 5 项 surgical scope，且 TaskOutput 跨 session 稳定性未验证 + orphan handoff 无 consumer。Per haze option A 决策 (commit 8d1aa4a)，revert Task 1.4 Background completion protocol 整段 + Task 4.4 frontmatter TaskOutput allowed-tools；保留 5 项 surgical 修法 + 加 dispatch_failed state hygiene。Cross-source review iter 2 PASS。
+- **brainstorming → ship Phase 2 hand-off 卡死（dogfood 实测）**：`brainstorming/SKILL.md` 终止协议写 "Then STOP"，LLM 把它当对话默认意（end of turn = 等用户），在 "Design approved" 之后停下来不进 Phase 2a，要 haze 戳「卡住了？」才回神。根因是 ohaze fork 把上游 brainstorming 的「自己钻进下一个 skill」改成「declare approved + hand back to caller」时，hand-off 的「立即返回 + 同 turn 继续」语义没有显式协议化。修复：`brainstorming/SKILL.md` 终止段加「return-from-subroutine signal, NOT end-of-turn signal」明文 + `commands/ship.md` Phase 1 末尾加 Phase 1→2 hand-off invariant。
+- **Phase 1 brief approval gate 缺失（2026-06-13 dogfood 观察 — main agent 偶发自动 declare brief approved 直接进 Phase 1.5，跳过 haze 拍板）**：`brainstorming/SKILL.md` 整段假设 `brief approved` 是一个状态，但全文从未定义触发条件——既没说 haze 必须显式说同意词，也没禁止 main agent 自己 declare。结果 main agent 偶尔判断「brief template 填完了」就直接 hand-off。修复：① `brainstorming/SKILL.md` 新增「Brief Approval Gate (BLOCKING)」段（位于「Approval And Self-Review」前），明确 explicit assent 触发词白名单、明确 forbidden self-declaration、明确 fail-safe（找不到 haze explicit assent 消息 = NOT in terminal state） ② SKILL.md「Approval And Self-Review」第一句加「explicitly」修饰 ③ SKILL.md「Terminal State」段加 fail-safe 提醒 ④ `commands/ship.md` Phase 1 在 hand-off invariant 之前加独立「Phase 1 BLOCKING gate」blockquote，强调 gate 是 haze 信号不是 main agent 判断、gate 是 BLOCKING vs hand-off 是 NON-BLOCKING 两者独立。
 
 ---
 

@@ -9,7 +9,7 @@
 - 类型: 发行产品（Claude Code plugin，会被 `/plugin install` 安装消费）
 - 集群归属: 集群 3 hazeflow（个人 AI 工作流系统）
 - 状态: active
-- 版本: 2.1.0（`plugins/ohaze/.claude-plugin/plugin.json`）
+- 版本: 2.1.1（`plugins/ohaze/.claude-plugin/plugin.json`）
 
 ## Agent 行为约定
 - 继承全局 [`~/CLAUDE.md`](~/CLAUDE.md) 4 编码原则（先想再写 / 极简优先 / 外科手术式改动 / 目标驱动）
@@ -22,6 +22,8 @@
   - `spec-to-codex-review` 是新核心 skill：输入 brief/spec/code refs/project type/main repo，输出 spec-review verdict JSON
   - `codex exec resume <thread_id>` **不带 `--sandbox`**（codex 0.137 拒绝；sandbox 继承自初始 dispatch）
   - 后台派发用 `Bash(run_in_background: true)`，**不用 nohup / no ScheduleWakeup**；harness re-invoke 是主触发，幂等状态门是唯一防御
+  - 顶层 `codex exec` dispatch 用 prompt-as-arg + `< /dev/null` 关 stdin（codex 0.137 stdin redirect silent crash mitigation）；resume 路径因 codex 0.137 不接受 PROMPT arg 保留 stdin redirect + 30s `thread.started` liveness check + KillBash 兜底；二次失败转 `state=dispatch_failed`（清 codex_bg_id）防 dangling running state
+  - Dispatch mode 术语 anchor 在 `codex-executor/SKILL.md` 顶层 Dispatch Mode Vocabulary 段：harness background（允许）/ OS-level background（禁止）/ foreground sync（仅 finishing 6th-option + modify 2a 架构例外）；其他 SKILL cross-ref 不再各自定义
   - resume 只在同一 ship 生命周期内（review retry / modify / finishing 第 6 项 ADVERSARIAL 修复）；finishing 后的 bug 修复 = 新 fix ship
 - 流程序: brainstorm（brief only）→ spec → Codex spec audit → worktree + brief/spec → plan → default-go → Codex
 - 分支策略: 由 `/ohaze:ship` 自动判断类型（feat/fix/hotfix）+ 起分支名（slug = feature 描述）；遵循全局 git 分支 4 规则
