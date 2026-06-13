@@ -16,6 +16,7 @@
 
 ### Fixed
 - **brainstorming → ship Phase 2 hand-off 卡死（dogfood 实测）**：`brainstorming/SKILL.md` 终止协议写 "Then STOP"，LLM 把它当对话默认意（end of turn = 等用户），在 "Design approved" 之后停下来不进 Phase 2a，要 haze 戳「卡住了？」才回神。根因是 ohaze fork 把上游 brainstorming 的「自己钻进下一个 skill」改成「declare approved + hand back to caller」时，hand-off 的「立即返回 + 同 turn 继续」语义没有显式协议化。修复：`brainstorming/SKILL.md` 终止段加「return-from-subroutine signal, NOT end-of-turn signal」明文 + `commands/ship.md` Phase 1 末尾加 Phase 1→2 hand-off invariant。
+- **Phase 1 brief approval gate 缺失（2026-06-13 dogfood 观察 — main agent 偶发自动 declare brief approved 直接进 Phase 1.5，跳过 haze 拍板）**：`brainstorming/SKILL.md` 整段假设 `brief approved` 是一个状态，但全文从未定义触发条件——既没说 haze 必须显式说同意词，也没禁止 main agent 自己 declare。结果 main agent 偶尔判断「brief template 填完了」就直接 hand-off。修复：① `brainstorming/SKILL.md` 新增「Brief Approval Gate (BLOCKING)」段（位于「Approval And Self-Review」前），明确 explicit assent 触发词白名单、明确 forbidden self-declaration、明确 fail-safe（找不到 haze explicit assent 消息 = NOT in terminal state） ② SKILL.md「Approval And Self-Review」第一句加「explicitly」修饰 ③ SKILL.md「Terminal State」段加 fail-safe 提醒 ④ `commands/ship.md` Phase 1 在 hand-off invariant 之前加独立「Phase 1 BLOCKING gate」blockquote，强调 gate 是 haze 信号不是 main agent 判断、gate 是 BLOCKING vs hand-off 是 NON-BLOCKING 两者独立。
 
 ### Removed
 

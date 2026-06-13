@@ -47,7 +47,9 @@ Invoke `ohaze:brainstorming` with the feature description.
 - Spec is no longer produced in Phase 1.
 - Capture the approved feature brief content and a kebab-case `slug` (≤ 4 words).
 
-> **Phase 1 hand-off invariant:** when `ohaze:brainstorming` declares `brief approved`, continue in the same assistant turn to Phase 1.5. This is a return-from-subroutine signal, not a place to stop.
+> **Phase 1 BLOCKING gate (brief approval is haze's signal, not yours):** `ohaze:brainstorming` MUST present the full brief to haze and wait for haze's explicit assent ("approve" / "通过" / "OK" / "可以" / "好" / equivalent) before declaring `brief approved`. Self-declaration based on "the template looks filled in" is forbidden. If you cannot point to a specific haze message in this conversation that gave explicit assent on the brief as a whole, you are NOT past Phase 1 — present the brief and stop until haze responds.
+>
+> **Phase 1 hand-off invariant:** ONCE `ohaze:brainstorming` has cleared the Brief Approval Gate and declared `brief approved`, continue in the same assistant turn to Phase 1.5. This is a return-from-subroutine signal, not a place to stop. The two are independent: gate is BLOCKING (wait for haze), hand-off is NON-BLOCKING (do not wait).
 
 ## Phase 1.5 — Claude Auto-Writes Spec
 

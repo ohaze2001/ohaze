@@ -91,9 +91,32 @@ When the conversation is clear, present the feature brief using this template. K
 - <一句话每条,不同意 push back>
 ```
 
+## Brief Approval Gate (BLOCKING)
+
+This is the single point where `brief approved` state is produced. It is a hard gate, not an internal judgment call.
+
+**You MUST:**
+
+1. Render the full brief using the template above and surface the complete Markdown to haze in the conversation.
+2. Explicitly ask haze to approve, e.g. "Brief 如上,确认通过吗?有要改的随时说".
+3. WAIT for haze's next message before declaring `brief approved`.
+
+**Counts as approval** (`brief approved` may proceed): haze types an explicit assent — "approve" / "通过" / "OK" / "可以" / "好" / "同意" / "go" / "ship it" / equivalent affirmative phrase scoped to the brief as a whole.
+
+**Does NOT count as approval** (loop back, do NOT declare `brief approved`):
+
+- haze asks any follow-up question, raises any concern, requests any change to the brief.
+- haze says "再想想" / "等下" / "嗯" / silent / off-topic reply.
+- A partial assent on one scenario / checklist item while other items are still being discussed.
+- Your own internal judgment that "the template is filled in" or "the brief looks complete".
+
+**Forbidden self-declarations:** Do NOT say "Brief approved" or hand back to `/ohaze:ship` based on your own assessment that the brief is well-formed. Approval is haze's signal, not yours. If you find yourself about to declare `brief approved` and cannot point to a specific haze message in this conversation that gave explicit assent, STOP and present the brief instead.
+
+After haze has explicitly approved the brief per this gate, proceed to Approval And Self-Review below.
+
 ## Approval And Self-Review
 
-After haze approves the brief, do a short inline self-review before terminal:
+After haze has **explicitly approved** the brief (per Brief Approval Gate above), do a short inline self-review before terminal:
 
 1. Placeholder scan: no `TBD`, empty scenario, or vague checklist item remains.
 2. Scenario consistency: each "完成的样子" item maps to at least one scenario or visible result.
@@ -105,6 +128,8 @@ Fix issues in conversation only. Do not write a separate review file.
 ## Terminal State
 
 The terminal state is `brief approved`.
+
+Fail-safe: If you cannot point to a specific haze message in this conversation that gave explicit assent per Brief Approval Gate, you are NOT in terminal state. Loop back to Brief Approval Gate and present the brief.
 
 Say:
 
