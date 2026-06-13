@@ -1,7 +1,7 @@
 ---
 description: Resume an /ohaze:ship workflow (called by harness re-invoke after Codex background completes, or by the user manually). Idempotent state gate → review loop (max 3 retries with stuck-detection) → ohaze finishing menu (6 options; 6th appears only when ADVERSARIAL findings exist).
 argument-hint: "[--more] (optional: continue past the 3-retry cap)"
-allowed-tools: Bash, BashOutput, Read, Write, Edit, Skill, Agent, AskUserQuestion
+allowed-tools: Bash, BashOutput, KillBash, TaskOutput, Read, Write, Edit, Skill, Agent, AskUserQuestion
 ---
 
 Continue the workflow started by `/ohaze:ship`. This command is the **state-gate entry point** — it is safe to invoke at any time (the gate decides what to do). It is also what the harness lands in via re-invoke after a `run_in_background` Codex task completes.
@@ -152,4 +152,4 @@ The finishing skill owns: project-type detection, recommended finish chain, docu
 - The 6-option finishing menu is owned by `ohaze:finishing` (not duplicated here). The 6th option ("修复对抗审查后收尾") only appears when the verdict contained ADVERSARIAL findings. The modify-flow stays inside `ohaze:finishing`.
 - Modify-loop iterations don't count against the 3-retry review cap — they're user-initiated, not reviewer-driven.
 - After modify branches (Codex / Claude / self-edit), finishing always returns to the menu.
-- This command does NOT call `ScheduleWakeup` and does NOT poll pid files. v2 control flow = `run_in_background` + harness re-invoke + idempotent state gate.
+- This command does NOT call `ScheduleWakeup` and does NOT poll pid files. v2 control flow = `run_in_background` + harness re-invoke + idempotent state gate. See `ohaze:codex-executor` Dispatch Mode Vocabulary for harness background vs forbidden OS-level background.

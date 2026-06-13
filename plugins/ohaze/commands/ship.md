@@ -1,7 +1,7 @@
 ---
 description: End-to-end feature shipping. BDD brief → Claude spec → Codex spec audit → worktree brief+spec → plan → Phase 3.5 default-go → Codex execute.
 argument-hint: "<feature description> [--project <abs-path>]"
-allowed-tools: Bash, BashOutput, Read, Write, Edit, Skill, Agent, AskUserQuestion
+allowed-tools: Bash, BashOutput, KillBash, TaskOutput, Read, Write, Edit, Skill, Agent, AskUserQuestion
 ---
 
 Orchestrate the ohaze v2.1 ship workflow for the user's request.
@@ -161,6 +161,8 @@ Use exactly two choices:
 Default-go semantics in v2.1 mean the recommended choice is `go` and the prompt is intentionally minimal; it does **not** mean dispatching before haze has an input boundary. If haze chooses `go`, proceed to Phase 4 immediately in the same resumed turn. If haze chooses `打断` or provides other non-go content, do not dispatch Codex; route to the modify/cancel branch. Keep the prompt product-language only and do not show task-level implementation detail unless the user explicitly asks.
 
 ## Phase 4 — Hand Off To Codex (run_in_background, no nohup, no ScheduleWakeup)
+
+See `ohaze:codex-executor` Dispatch Mode Vocabulary: this phase uses harness background, not OS-level background or a foreground sync exception.
 
 ### 4a. Translate plan to XML
 
