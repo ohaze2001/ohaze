@@ -29,14 +29,15 @@ Side effect:
 
 ## Codex Invocation Contract
 
-Run a one-shot, synchronous Codex review:
+Run a one-shot Codex review in Claude Code harness background mode:
 
 ```bash
 cd <work_dir> && codex exec \
   --sandbox danger-full-access \
   --skip-git-repo-check \
   --json \
-  < <prompt_file>
+  "$(cat <prompt_file>)" \
+  < /dev/null
 ```
 
 Rules:
@@ -45,8 +46,9 @@ Rules:
 - No thread reuse, no resume, fresh session every review iteration.
 - Run from `main_repo_path` or `worktree_path` as the current working directory.
 - Do NOT pass `--cd`.
-- Do NOT use `nohup`.
-- Do NOT run in background. Phase 1.6 is synchronous and should finish in seconds to tens of seconds.
+- Do not use `nohup`, OS-level detachment, trailing `&`, pid files, or the `ScheduleWakeup` pattern.
+- Dispatch with `Bash(run_in_background: true)` harness background. See `ohaze:codex-executor` Dispatch Mode Vocabulary for the distinction between harness background, forbidden OS-level background, and the documented foreground sync exceptions.
+- Pass the prompt as the top-level CLI argument via `"$(cat <prompt_file>)"` and close stdin with `< /dev/null` to avoid the codex 0.137 stdin redirect silent crash.
 
 ## Prompt Template
 
@@ -170,9 +172,22 @@ zero IMPORTANT items. NICE-TO-HAVE items alone do NOT cause NEEDS-CLARIFICATION.
 </output_format>
 ````
 
+## Background completion protocol
+
+After dispatch, use this six-step protocol:
+
+1. Run a 30s dispatch liveness check via `BashOutput(codex_bg_id)` with `filter='thread.started'`. If no `thread.started` appears, call `KillBash(codex_bg_id)`, re-dispatch once with the same prompt file and command, and repeat the 30s liveness check. If the second attempt fails, write the `codex-output-unparseable` stub verdict from "Malformed JSON Fallback" and return to the caller.
+2. Once liveness passes, wait for Codex completion with `TaskOutput(task_id, block=true, timeout=300000)`. This is the harness-native primitive dogfood-verified on 2026-06-13 in this ship's spec audit iter 2/3.
+3. After Codex completes, extract the final JSON object from the `--json` message stream via `BashOutput(codex_bg_id)` with `filter='"type":"message"'`.
+4. Validate the JSON object and write it to `<work_dir>/.ohaze/spec-review-verdict.json`.
+5. If the JSON is malformed, follow the "Malformed JSON Fallback" section: retry once with stricter output guidance, then write the stub verdict if it is still malformed.
+6. Return control to the caller.
+
+Defensive fallback: if `TaskOutput` is rejected by the harness or times out, write `<work_dir>/.ohaze/spec-audit-handoff.json` with fields `state="spec_audit_running"`, `codex_bg_id`, `brief_path`, and `spec_path`, end the current turn, and let the harness re-invoke continue from the handoff. This is a defensive path only; the dogfood happy path uses `TaskOutput`.
+
 ## Output Validation
 
-After Codex returns, extract the final JSON object from the `--json` message stream and validate:
+When the Background completion protocol reaches validation, check:
 
 - Top-level object only, no surrounding prose.
 - `verdict` is `PASS` or `NEEDS-CLARIFICATION`.
