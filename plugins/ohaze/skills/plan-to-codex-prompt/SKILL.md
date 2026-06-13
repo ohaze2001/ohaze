@@ -5,7 +5,7 @@ description: Use when handing an ohaze:writing-plans guidance plan to Codex for 
 
 # Plan → Codex Prompt
 
-Translate an `ohaze:writing-plans` output (`docs/superpowers/plans/<date>-<feature>.md`) into a complete XML-block prompt that gets piped into `codex exec` by `ohaze:codex-executor`.
+Translate an `ohaze:writing-plans` output (`docs/ohaze/plans/<date>-<feature>.md`) into a complete XML-block prompt that is passed as the top-level prompt argument to `codex exec` by `ohaze:codex-executor` (the prompt is written to a file for structural safety, then codex-executor cats the file content into the CLI argument and closes stdin with `< /dev/null`).
 
 `ohaze:writing-plans` already produces a guidance-form plan (behavior contracts + acceptance criteria, no prescriptive code), so **this skill is a thin verbatim wrapper** — no distillation needed. The plan is the contract; Codex picks the implementation.
 
@@ -23,7 +23,7 @@ If the input plan is **not** from `ohaze:writing-plans` (e.g., it's a `superpowe
 
 ## Output contract
 
-Produce a single string ready to be written to a prompt file and piped into `codex exec` by `ohaze:codex-executor`. The string MUST follow this exact XML block layout, in this order:
+Produce a single string ready to be written to a prompt file. `ohaze:codex-executor` then passes the file content as the top-level codex exec prompt argument while closing stdin (`< /dev/null`). The string MUST follow this exact XML block layout, in this order:
 
 ```
 <task>
@@ -110,7 +110,7 @@ At the end, report in this format:
 - The `{full verbatim contents of plan.md}` slot is non-negotiable for ohaze:writing-plans output. The plan is already the right size and shape (contract form). Do not summarize, reformat, or strip checkboxes.
 - If `plan.md` is over 30,000 characters, embed it as-is anyway — Codex handles long plans fine.
 - If `project_test_command` truly cannot be determined, leave the literal placeholder `{project_test_command}` AND stop before sending; ask the user. Do not guess `npm test` for a project that has no `package.json`.
-- After producing the prompt string, the caller (typically `ohaze:codex-executor` skill) writes it to `<worktree>/.ohaze/codex-prompt.xml` and pipes it into `codex exec --sandbox danger-full-access` running in the background.
+- After producing the prompt string, the caller (typically `ohaze:codex-executor` skill) writes it to `<worktree>/.ohaze/codex-prompt.xml` and passes the file content as the top-level prompt argument to `codex exec --sandbox danger-full-access` running in the background (`Bash(run_in_background: true)`), with stdin redirected to `/dev/null` to avoid codex 0.137 stdin silent crash. See `ohaze:codex-executor` Phase 4 Step 2 for the exact dispatch command.
 
 ## What this skill does NOT do
 
