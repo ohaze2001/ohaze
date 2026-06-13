@@ -1,7 +1,7 @@
 ---
 description: Re-enter finishing for an /ohaze:ship that was paused (option 4 「先不处理」, option 2c 「我自己改」) or self-edited. Idempotent state-gate entry; optionally re-runs review, then shows the 6-option finishing menu.
 argument-hint: "[--skip-review] (skip the optional re-review)"
-allowed-tools: Bash, BashOutput, KillBash, TaskOutput, Read, Write, Edit, Skill, Agent, AskUserQuestion
+allowed-tools: Bash, BashOutput, KillBash, Read, Write, Edit, Skill, Agent, AskUserQuestion
 ---
 
 Resume finishing for a previously paused ship.
@@ -39,6 +39,7 @@ Act per this table (identical defense to `/ohaze:ship-review` — entry symmetry
 | `codex_done` / `review_fail` | The review loop hasn't run / finished yet — suggest `/ohaze:ship-review` instead. End. |
 | `kept` | Normal resume: continue into Step 1 below. |
 | `self-edit-pending` | Normal resume after manual edit: continue into Step 1 below. |
+| `dispatch_failed` | Codex dispatch failed liveness check twice — finishing cannot start until codex run produces commits. Tell user to either rerun `/ohaze:ship` (fresh dispatch) or manually resume via `codex exec resume <thread_id>` if `thread_id` preserved. End. |
 
 ### 4. Verify the worktree still exists
 

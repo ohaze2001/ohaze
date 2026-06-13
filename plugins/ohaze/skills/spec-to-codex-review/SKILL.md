@@ -172,22 +172,9 @@ zero IMPORTANT items. NICE-TO-HAVE items alone do NOT cause NEEDS-CLARIFICATION.
 </output_format>
 ````
 
-## Background completion protocol
-
-After dispatch, use this six-step protocol:
-
-1. Run a 30s dispatch liveness check via `BashOutput(codex_bg_id)` with `filter='thread.started'`. If no `thread.started` appears, call `KillBash(codex_bg_id)`, re-dispatch once with the same prompt file and command, and repeat the 30s liveness check. If the second attempt fails, write the `codex-output-unparseable` stub verdict from "Malformed JSON Fallback" and return to the caller.
-2. Once liveness passes, wait for Codex completion with `TaskOutput(task_id, block=true, timeout=300000)`. This is the harness-native primitive dogfood-verified on 2026-06-13 in this ship's spec audit iter 2/3.
-3. After Codex completes, extract the final JSON object from the `--json` message stream via `BashOutput(codex_bg_id)` with `filter='"type":"message"'`.
-4. Validate the JSON object and write it to `<work_dir>/.ohaze/spec-review-verdict.json`.
-5. If the JSON is malformed, follow the "Malformed JSON Fallback" section: retry once with stricter output guidance, then write the stub verdict if it is still malformed.
-6. Return control to the caller.
-
-Defensive fallback: if `TaskOutput` is rejected by the harness or times out, write `<work_dir>/.ohaze/spec-audit-handoff.json` with fields `state="spec_audit_running"`, `codex_bg_id`, `brief_path`, and `spec_path`, end the current turn, and let the harness re-invoke continue from the handoff. This is a defensive path only; the dogfood happy path uses `TaskOutput`.
-
 ## Output Validation
 
-When the Background completion protocol reaches validation, check:
+After Codex returns, extract the final JSON object from the `--json` message stream via `BashOutput(codex_bg_id)` with `filter='"type":"message"'`, then validate:
 
 - Top-level object only, no surrounding prose.
 - `verdict` is `PASS` or `NEEDS-CLARIFICATION`.

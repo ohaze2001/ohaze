@@ -84,7 +84,7 @@ Immediately after dispatch, run a bounded 30s transport check:
 1. Call `BashOutput(codex_bg_id)` with `filter='thread.started'` and wait up to 30 seconds for the first event.
 2. If no `thread.started` appears, call `KillBash(codex_bg_id)`.
 3. Re-dispatch once using the same prompt file and the same command from Step 2, then repeat the same 30s `thread.started` liveness check.
-4. If the second attempt also fails, surface this warning verbatim and stop without writing a handoff: `WARNING: codex initial dispatch failed liveness check twice; codex 0.137 stdin crash or pre-thread transport failure. No handoff written to avoid dangling running state.`
+4. If the second attempt also fails, transition `.ohaze/current-ship.json.state` to `dispatch_failed` via Read-modify-Write (preserve all other fields, clear `codex_bg_id` and `thread_id` to `null`), then surface this warning verbatim and stop: `WARNING: codex initial dispatch failed liveness check twice; codex 0.137 stdin crash or pre-thread transport failure. State transitioned to dispatch_failed; rerun /ohaze:ship or /ohaze:ship-review to resume.`
 5. If the check passes, proceed to Step 3 to capture `thread_id` and `codex_bg_id`.
 
 This liveness check is a transport-layer crash detector, not a completion poll.
@@ -398,7 +398,7 @@ Track retry counter starting at 0; persist in `.ohaze/current-ship.json.retries`
      1. Call `BashOutput(codex_bg_id)` with `filter='thread.started'` and wait up to 30 seconds.
      2. If no `thread.started` appears, call `KillBash(codex_bg_id)`.
      3. Re-dispatch once with the same `thread_id` and the same prompt file, then repeat the 30s liveness check.
-     4. If the second attempt also fails, surface this warning verbatim and do not retry again: `WARNING: codex resume dispatch failed liveness check twice; codex 0.137 stdin crash. Suggest /ohaze:ship-review --more or manual resume.`
+     4. If the second attempt also fails, transition `.ohaze/current-ship.json.state` to `dispatch_failed` via Read-modify-Write (preserve all other fields, clear `codex_bg_id` to `null`; preserve `thread_id` for manual resume), then surface this warning verbatim and do not retry again: `WARNING: codex resume dispatch failed liveness check twice; codex 0.137 stdin crash. State transitioned to dispatch_failed. Suggest /ohaze:ship-review --more or manual resume.`
      5. If the check passes, continue with the `codex_bg_id` capture-and-persist rule below.
 
      This liveness check is a transport-layer crash detector, not a completion poll.

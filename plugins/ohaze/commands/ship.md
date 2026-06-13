@@ -1,7 +1,7 @@
 ---
 description: End-to-end feature shipping. BDD brief → Claude spec → Codex spec audit → worktree brief+spec → plan → Phase 3.5 default-go → Codex execute.
 argument-hint: "<feature description> [--project <abs-path>]"
-allowed-tools: Bash, BashOutput, KillBash, TaskOutput, Read, Write, Edit, Skill, Agent, AskUserQuestion
+allowed-tools: Bash, BashOutput, KillBash, Read, Write, Edit, Skill, Agent, AskUserQuestion
 ---
 
 Orchestrate the ohaze v2.1 ship workflow for the user's request.

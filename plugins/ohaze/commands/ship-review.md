@@ -1,7 +1,7 @@
 ---
 description: Resume an /ohaze:ship workflow (called by harness re-invoke after Codex background completes, or by the user manually). Idempotent state gate → review loop (max 3 retries with stuck-detection) → ohaze finishing menu (6 options; 6th appears only when ADVERSARIAL findings exist).
 argument-hint: "[--more] (optional: continue past the 3-retry cap)"
-allowed-tools: Bash, BashOutput, KillBash, TaskOutput, Read, Write, Edit, Skill, Agent, AskUserQuestion
+allowed-tools: Bash, BashOutput, KillBash, Read, Write, Edit, Skill, Agent, AskUserQuestion
 ---
 
 Continue the workflow started by `/ohaze:ship`. This command is the **state-gate entry point** — it is safe to invoke at any time (the gate decides what to do). It is also what the harness lands in via re-invoke after a `run_in_background` Codex task completes.
@@ -37,6 +37,7 @@ Read `state` from `<worktree>/.ohaze/current-ship.json` and act per this table. 
 | `review_fail` | Proceed to retry (Phase 6 in `ohaze:codex-executor`). Retry counter is already in the handoff. |
 | `kept` | Tell the user the previous ship was paused via finish menu option 4 → suggest `/ohaze:ship-finish` to resume. End. |
 | `self-edit-pending` | Tell the user the previous ship was paused via finish menu option 2c → suggest `/ohaze:ship-finish` after their manual edits. End. |
+| `dispatch_failed` | Codex initial or retry dispatch failed liveness check twice (codex 0.137 stdin crash or pre-thread transport failure). Surface `WARNING: ship is in dispatch_failed state. codex_bg_id is null (process killed). thread_id={value or null}.` and tell the user to either rerun `/ohaze:ship` (fresh dispatch, discards thread) or manually resume via `cd <worktree_path> && codex exec resume <thread_id> ...` if thread_id is preserved. Do NOT auto-retry. End. |
 
 > The gate eats ghost wake-ups, double `/ohaze:ship-review` invocations, and accidental re-invokes alike. There is no fallback `ScheduleWakeup` because dogfood (spec §3) proved harness re-invoke is reliable; A-plan: state gate is the only defense.
 
