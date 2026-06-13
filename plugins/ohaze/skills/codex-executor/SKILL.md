@@ -33,6 +33,14 @@ Hand a translated XML prompt to Codex via the `codex` CLI, then run the Claude-s
 
 If `mode` is missing or invalid, default to `'dispatch'` and warn the user — strict validation isn't worth a hard fail here, but the warning ensures the caller knows the contract drifted.
 
+## Dispatch Mode Vocabulary
+
+Use these terms consistently across ohaze so "background" is never ambiguous:
+
+- **harness background** (allowed and required except for documented architecture exceptions): `Bash(run_in_background: true)`. Claude Code's harness owns the Bash child process, the main agent retains a task id for `BashOutput(<id>)`, and the harness re-invokes the main agent when Codex exits.
+- **OS-level background** (forbidden): `nohup codex exec ... &`, `codex exec ... > log 2>&1 &`, `echo $! > pid_file`, or any pattern that detaches Codex from the harness session and pairs it with `ScheduleWakeup`. This is the removed v1 path.
+- **foreground sync** (allowed only for the finishing 6th-option and modify 2a architecture exceptions): `Bash(...)` without `run_in_background: true`, where the main agent blocks until Codex returns. The finishing skill needs this to stay alive across commit / re-review / finish-chain mini-loops.
+
 ## Phase 4: Dispatch Codex (`run_in_background`, full-access sandbox on the initial dispatch)
 
 ohaze dispatches `codex exec` directly with `--sandbox danger-full-access` because ship plans legitimately need writes outside the worktree (cross-project paths, global settings, etc.). The trust boundary is at `/ohaze:ship` invocation — brainstorm → plan → adversarial review have already gated this.
@@ -49,7 +57,7 @@ Use the Write tool (not a heredoc) for the prompt file — the XML contains back
 
 ### Step 2 — Background-dispatch `codex exec`
 
-Use Claude Code's `Bash` tool with `run_in_background: true`. The harness tracks the background task and re-invokes the main agent automatically when the process exits.
+Use Claude Code's `Bash` tool with `run_in_background: true` (harness background; see Dispatch Mode Vocabulary). The harness tracks the background task and re-invokes the main agent automatically when the process exits.
 
 ```bash
 codex exec \
@@ -57,14 +65,29 @@ codex exec \
   --skip-git-repo-check \
   --cd <worktree_path> \
   --json \
-  < <prompt_file>
+  "$(cat <prompt_file>)" \
+  < /dev/null
 ```
 
 **Strict rules for this dispatch:**
 
-- **No `nohup`, no trailing `&`, no `> log 2>&1`, no `echo $! > pid_file`** — the harness owns process tracking via `run_in_background`. Those legacy mechanisms predate harness re-invoke and have been removed.
+- **No `nohup`, no trailing `&`, no `> log 2>&1`, no `echo $! > pid_file`** — those are OS-level background patterns forbidden by the Dispatch Mode Vocabulary. Use harness background only.
 - **Must include `--json`** so we can parse the streamed event log for `thread.started` and the final message.
 - **Must run inside a real git project directory** (`--cd <worktree_path>` points at the ship worktree). codex exec exits non-zero in `/tmp` or any non-git path.
+- **Must close stdin with `< /dev/null`**. codex 0.137 can silently crash when the initial `codex exec --json` prompt is provided via stdin redirect; passing the prompt as the top-level CLI argument and closing stdin avoids that transport failure.
+- **Must dispatch with `Bash(run_in_background: true)`** so the harness owns completion and re-invocation. See Dispatch Mode Vocabulary for why OS-level background is forbidden.
+
+### Step 2.5 — Dispatch liveness check
+
+Immediately after dispatch, run a bounded 30s transport check:
+
+1. Call `BashOutput(codex_bg_id)` with `filter='thread.started'` and wait up to 30 seconds for the first event.
+2. If no `thread.started` appears, call `KillBash(codex_bg_id)`.
+3. Re-dispatch once using the same prompt file and the same command from Step 2, then repeat the same 30s `thread.started` liveness check.
+4. If the second attempt also fails, surface this warning verbatim and stop without writing a handoff: `WARNING: codex initial dispatch failed liveness check twice; codex 0.137 stdin crash or pre-thread transport failure. No handoff written to avoid dangling running state.`
+5. If the check passes, proceed to Step 3 to capture `thread_id` and `codex_bg_id`.
+
+This liveness check is a transport-layer crash detector, not a completion poll.
 
 ### Step 3 — Capture `thread_id` and `codex_bg_id`
 
@@ -96,7 +119,7 @@ The authoritative `current-ship.json` schema is defined in `commands/ship.md`; t
 
 ### Step 5 — Report and let go
 
-Don't poll, don't sleep, don't `ScheduleWakeup`. Report to the user and return control to the caller; the main agent's turn ends. The harness will re-invoke the main agent when the background codex task exits, and `/ohaze:ship-review`'s idempotent state gate will pick up from there.
+Don't poll asynchronously for completion, don't sleep, don't `ScheduleWakeup`. The ONLY bounded synchronous poll allowed is the 30s dispatch-liveness check immediately after dispatch (Phase 4 initial + Phase 6 retry + spec-to-codex-review Phase 1.6) to detect codex 0.137 stdin silent crash; this is a transport-layer crash detector, not a completion poll. Report to the user and return control to the caller; the main agent's turn ends. The harness will re-invoke the main agent when the background codex task exits, and `/ohaze:ship-review`'s idempotent state gate will pick up from there.
 
 > "Codex 在后台跑 (codex_bg_id=`<id>`, thread_id=`<UUID|null>`, sandbox=`danger-full-access`).
 > 进程完成后 harness 会自动唤醒主 agent 进 review,无需手动触发。
@@ -370,6 +393,16 @@ Track retry counter starting at 0; persist in `.ohaze/current-ship.json.retries`
        < <worktree_path>/.ohaze/codex-fix-iter<N>.xml
      ```
 
+     Because `codex exec resume` does not accept a top-level PROMPT argument in codex 0.137, this resume command must keep stdin redirect. Immediately after dispatch, run the same bounded transport liveness check as Phase 4 Step 2.5:
+
+     1. Call `BashOutput(codex_bg_id)` with `filter='thread.started'` and wait up to 30 seconds.
+     2. If no `thread.started` appears, call `KillBash(codex_bg_id)`.
+     3. Re-dispatch once with the same `thread_id` and the same prompt file, then repeat the 30s liveness check.
+     4. If the second attempt also fails, surface this warning verbatim and do not retry again: `WARNING: codex resume dispatch failed liveness check twice; codex 0.137 stdin crash. Suggest /ohaze:ship-review --more or manual resume.`
+     5. If the check passes, continue with the `codex_bg_id` capture-and-persist rule below.
+
+     This liveness check is a transport-layer crash detector, not a completion poll.
+
      **Capture the new `codex_bg_id`** returned by `Bash(run_in_background)` and **immediately update `.ohaze/current-ship.json.codex_bg_id`** per the Read-modify-Write protocol in `ship.md` §Write Protocol (Read full file → preserve all other fields → Write with `codex_bg_id` AND `retries` overridden in the same Write to minimize race surface). Every retry / modify / 6th-option resume returns a fresh background task id; downstream consumers (Phase 5.0 report extraction, `/ohaze:status` deep inspect, doc-finish 真相源, ship-review Step 3a liveness check) read this field and would otherwise hit a dead/old stream.
 
      Dispatching via `Bash(run_in_background: true)` lets the harness re-invoke the main agent on completion — same control-flow shape as Phase 4. The orchestrator does not wait synchronously.
@@ -400,8 +433,8 @@ Track retry counter starting at 0; persist in `.ohaze/current-ship.json.retries`
 
 - Does NOT translate plan to prompt — that's `ohaze:plan-to-codex-prompt`.
 - Does NOT run brainstorming, planning, worktree setup, or finishing — those are owned by `ohaze:brainstorming` / `ohaze:writing-plans` / `ohaze:using-git-worktrees` / `ohaze:finishing`, orchestrated by `/ohaze:ship`.
-- Does NOT schedule any `ScheduleWakeup` — the v2 control flow relies on `run_in_background` harness re-invoke. No fallback wakeup is set (A-plan: state gate is the only ghost-wake defense, see spec §3).
-- Does NOT poll Codex synchronously. The control-flow pattern is: `Bash(run_in_background)` dispatch → main turn ends → harness re-invokes on codex exit → `/ohaze:ship-review` state gate picks up.
+- Does NOT schedule any `ScheduleWakeup` — the v2 control flow relies on `Bash(run_in_background: true)` harness background re-invoke. No fallback wakeup is set (A-plan: state gate is the only ghost-wake defense, see spec §3).
+- Does NOT poll asynchronously for completion. The control-flow pattern is: `Bash(run_in_background: true)` harness background dispatch → bounded liveness check only → main turn ends → harness re-invokes on codex exit → `/ohaze:ship-review` state gate picks up. The ONLY bounded synchronous poll allowed is the 30s dispatch-liveness check immediately after dispatch (Phase 4 initial + Phase 6 retry + spec-to-codex-review Phase 1.6) to detect codex 0.137 stdin silent crash; this is a transport-layer crash detector, not a completion poll.
 
 ## Resume Boundary
 
