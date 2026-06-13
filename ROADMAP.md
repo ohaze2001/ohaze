@@ -32,7 +32,10 @@ v2.1.0 BDD/TDD restructure：haze 只 approve brief，Claude 自动写 spec，Co
   - 6th-option mini-loop + modify 2a 同 Phase 6（用 resume）
 - **修法落地**：① `ohaze:spec-to-codex-review` Phase 1.6 命令模板改 prompt-as-arg + `< /dev/null` ② `ohaze:codex-executor` Phase 4 Step 2 同改 ③ `ohaze:codex-executor` Phase 6 + 6th-option + modify 2a 加 dispatch liveness 检查（背景任务启动 30s 内无 thread.started event = silent crash，自动 kill + retry 1 次，仍失败才 surface 给用户） ④ 调研 codex 0.138+ 是否解决该 bug，到时降级回 stdin redirect 简化命令模板
 - **实战预案文档**：可在 README 或 CONTRIBUTING 加 "Codex Dispatch Reliability" 小节，让用户撞同问题时不抓瞎
-
+- **（高优先 · 2026-06-13 观察）`spec-to-codex-review` Phase 1.6 dispatch mode 行为不一致**：症状 = 大多数 session 走 `Bash(run_in_background: true)`（显示「Running in the background (↓ to manage)」，正常），但**偶尔几次**走前台 sync `Bash(...)`（显示「Running… (2m 10s · timeout 10m)（ctrl+b to run in background）」），一旦此时撞上 [[现有 codex stdin redirect silent crash]] 就**直接卡死 main agent 整个 timeout 窗口**（10 分钟），比后台模式更糟（后台至少可异步 kill 或 detect）。
+  - **根因猜测**：`plugins/ohaze/skills/spec-to-codex-review/SKILL.md:49` 规约「Do NOT run in background. Phase 1.6 is synchronous and should finish in seconds to tens of seconds.」字面意思与实战观察「background 更稳」相矛盾——main agent 大多数时候按实战经验走 background，偶尔严格按 SKILL 字面意思走前台 sync，导致行为分裂
+  - **修法**：① 反转 `spec-to-codex-review/SKILL.md:49` 规约 → 改成「MUST run in background via `Bash(run_in_background: true)`; main thread polls BashOutput」② Codex Invocation Contract 命令模板段加 explicit `Bash(run_in_background: true)` 注释 ③ 全局 grep ohaze plugin 内其他 codex dispatch 调用点，确认没有同类「sync 字面意思 vs background 实战」规约不一致 ④ 同步在 `codex-executor` SKILL 强化「all codex exec dispatch MUST be background」铁律
+  - 与现有 stdin crash bug 关系：两个 bug 独立但叠加——dispatch mode 不一致是 SKILL 规约 bug，stdin crash 是 codex 0.137 内部 bug；mode 不一致放大了 stdin crash 的伤害面（前台 crash 卡死主线程 vs 后台 crash 可异步处理）
 ## 长期目标
 - v2.x 稳定后，重新设计「事件外露、消费方自取」式 vault 接口（非 hook 耦合），让外部观察方按需消费 ohaze ship 事件而不耦合 ohaze 自身
 
