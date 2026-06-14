@@ -57,13 +57,17 @@ Substitute `{spec_path}`, `{brief_path}`, `{code_refs}`, `{project_type}`, `{mai
 ````xml
 <task>
 You are about to implement the spec at {spec_path} for feature "{feature_name}".
-Before you start coding, audit it from the implementer's perspective.
+Before you start coding, audit it along EXACTLY TWO axes only:
 
-Your job is NOT to nitpick design or rate prose quality. Your job is to find
-the spec issues that WILL block you (or another implementer) at execution time:
-ambiguity that forces a guess, missing constraints that force a rework,
-contradictions with existing code that force a redesign, scope drift from
-what the user actually asked for.
+1. Does the spec cover the approved brief's requested behavior, scenarios, and
+   out-of-scope boundaries?
+2. Is there a concretely better implementation alternative with a measurable
+   tradeoff?
+
+Your job is NOT to nitpick design, rate prose quality, or pre-solve
+implementer-stage questions. If a concern is about wording interpretation,
+low-level implementation detail, or codebase fit, leave it for the implementer
+via `missing_context_gating` or for Phase 5 cross-source review.
 </task>
 
 <inputs>
@@ -75,61 +79,68 @@ what the user actually asked for.
 </inputs>
 
 <review_dimensions>
-Walk through these 5 dimensions in order. Do not skip any.
+Walk through these 2 dimensions in order. Do not skip any.
 
-A) BRIEF ↔ SPEC ALIGNMENT (scope drift)
-   - For each "完成的样子" checkbox in the brief: is there a corresponding
-     section in the spec that covers it?
-   - Does the spec add anything the brief did NOT ask for? (scope creep)
-   - Does the spec remove or skip anything the brief asked for? (scope cut)
-   - Out-of-scope items in the brief: does the spec accidentally implement them?
+A) FUNCTIONAL COVERAGE (brief ↔ spec, both directions)
+   - For each "完成的样子" checkbox in the brief: does the spec cover it?
+     If not, report COVERAGE-GAP.
+   - For each brief Scenario: is the requested outcome reachable through the
+     spec? If not, report COVERAGE-GAP.
+   - For each brief Out of Scope item: does the spec accidentally implement it?
+     If so, report COVERAGE-DRIFT.
+   - Does the spec add any new section, Task, behavior, or requirement that the
+     brief did not ask for? If so, report COVERAGE-DRIFT.
+   - Every finding from this dimension MUST cite a concrete brief line in
+     `brief_anchor`. If you cannot cite the brief, the finding cannot block.
 
-B) AMBIGUITY (2-interpretation test)
-   - For each requirement / behavior / interface in the spec: read it twice
-     and pretend you are a different implementer the second time. Did you
-     reach the same conclusion both times?
-   - Specifically check: data flow direction, error handling boundaries,
-     concurrency assumptions, what state is owned by whom, idempotency
-     expectations, what counts as "success".
-   - For each ambiguity found: quote the exact spec text and list the ≥ 2
-     reasonable interpretations.
-
-C) MISSING DETAILS (implementer "卡住" test)
-   - Walk a hypothetical first hour of implementation. At which point would
-     you have to stop and ask a question that the spec does not answer?
-   - Check for: missing input/output formats, undefined error states,
-     undefined timeouts/retries/limits, missing file paths, undefined
-     interface signatures, missing dependency on external state (env vars,
-     config files, network).
-
-D) CONFLICTS WITH EXISTING CODE
-   - Read the {code_refs} files. For each: does the spec contradict an
-     established pattern, API, or invariant in this code?
-   - Does the spec assume a function / module / type exists that does not?
-   - Does the spec assume a function / module / type does NOT exist that
-     actually does (so the implementer should reuse instead of recreate)?
-
-E) TECHNICAL DECISION CHALLENGE
+B) IMPLEMENTATION QUALITY (concrete alternative challenge)
    - For each non-trivial decision in the spec (library choice, architecture
-     pattern, data structure, retry strategy, etc.): is there a simpler,
-     safer, or cheaper alternative the spec did not consider?
-   - Only flag if your alternative is concretely better (cite the
-     comparison). Do NOT flag "I would have done it differently" without
-     a specific tradeoff argument.
+     pattern, data structure, retry strategy, persistence model, etc.): is
+     there a simpler, safer, cheaper, or better-UX alternative?
+   - Only report ALT-DECISION when the alternative is concrete and measurably
+     better. "Better" must quantify at least one tradeoff: code size or files
+     touched, failure modes or blast radius, LLM calls / storage / latency, or
+     impact on a brief scenario.
+   - Every finding from this dimension MUST include `better_alternative` with
+     `current_approach`, `proposed_alternative`, and `quantified_tradeoff`.
+   - Do NOT report "I would have done it differently" without an alternative
+     and quantified comparison.
 </review_dimensions>
+
+<scope_boundary>
+The following implementer-stage concerns are OUT OF SCOPE for this audit:
+
+- ambiguity in wording or interpretation. The implementer should use
+  `missing_context_gating` when execution genuinely needs a decision.
+- missing low-level details such as exact helper names, local control flow,
+  retry constants, file path spelling, or internal signatures. The implementer
+  should use `missing_context_gating` if these block execution.
+- conflicts with existing code patterns, APIs, or helpers. The implementer
+  should check the repo during execution; Phase 5 cross-source review remains
+  the downstream firewall for integration and scope issues.
+
+DO NOT report them here even if you notice them. They are handled by other
+quality gates downstream. Reporting them here causes audit 越审越深 -- the
+meta-problem this audit is intentionally designed to avoid.
+</scope_boundary>
 
 <constraints>
 - Confidence gate: only report an issue if you are ≥ 7/10 confident it
-  is a real problem. Skip "this might be confusing" — only report
-  "this WILL force a guess / WILL cause rework / WILL conflict with X".
-- Each issue must cite specific evidence: spec file:line OR code file:line.
-  No "the spec is unclear about errors" without quoting the line.
+  is a real problem inside the two dimensions above.
+- Each issue must cite specific evidence: brief file:line, spec file:line, or
+  code file:line. No broad claims without quoting the relevant line.
 - Do NOT critique the brief's requirements (haze decides product scope,
-  not you). You can flag brief↔spec drift in dimension A, but you cannot
-  say "this feature shouldn't exist".
+  not you). You can flag brief↔spec coverage findings in dimension A, but
+  you cannot say "this feature shouldn't exist".
 - Do NOT suggest style changes, naming preferences, or formatting fixes.
-- Each issue must be tagged with one of: {AMBIGUITY, MISSING, CONFLICT,
-  DRIFT, ALT-DECISION} and routed to one of: {fix-in-spec, ask-haze}.
+- Each issue must be tagged with one closed enum value: {COVERAGE-GAP,
+  COVERAGE-DRIFT, ALT-DECISION}. New categories are not allowed.
+  - COVERAGE-GAP = spec omits requested brief behavior. `brief_anchor` REQUIRED.
+  - COVERAGE-DRIFT = spec adds behavior the brief did not request or crosses
+    a brief out-of-scope boundary. `brief_anchor` REQUIRED.
+  - ALT-DECISION = spec chose an approach with a concrete, measurably better
+    alternative. `better_alternative` REQUIRED.
+- Each issue must be routed to one of: {fix-in-spec, ask-haze}.
   - fix-in-spec = Claude can resolve by editing the spec without user input
   - ask-haze = haze needs to decide on a product / scope / requirement
     question. Prefer fix-in-spec for technical decisions. You MAY route a
@@ -154,11 +165,17 @@ Return a single JSON object with this exact shape (no surrounding prose):
   "summary": "<one sentence>",
   "issues": [
     {
-      "id": "<short slug e.g. 'auth-flow-ambiguous'>",
-      "category": "AMBIGUITY" | "MISSING" | "CONFLICT" | "DRIFT" | "ALT-DECISION",
+      "id": "<short slug e.g. 'brief-scenario-uncovered'>",
+      "category": "COVERAGE-GAP" | "COVERAGE-DRIFT" | "ALT-DECISION",
       "severity": "CRITICAL" | "IMPORTANT" | "NICE-TO-HAVE",
       "routing": "fix-in-spec" | "ask-haze",
       "evidence": "<file:line citation + quoted text>",
+      "brief_anchor": "<brief file:line citation + quoted text; REQUIRED for COVERAGE-GAP and COVERAGE-DRIFT, optional for ALT-DECISION>",
+      "better_alternative": {
+        "current_approach": "<what the spec currently proposes>",
+        "proposed_alternative": "<the concrete better approach>",
+        "quantified_tradeoff": "<measurable comparison: size, risk, cost, latency, UX, or brief-scenario impact>"
+      },
       "problem": "<technical description>",
       "user_impact_description": "<string in product language describing what user-facing function is incomplete/broken/degraded, OR null if purely technical with no user-facing impact>",
       "suggestion": "<concrete recommendation: either spec change text OR question to ask haze>",
@@ -166,6 +183,14 @@ Return a single JSON object with this exact shape (no surrounding prose):
     }
   ]
 }
+
+Field consistency rules:
+- `brief_anchor` is string or null; `better_alternative` is object or null.
+- COVERAGE-GAP and COVERAGE-DRIFT MUST have non-empty `brief_anchor` and
+  `better_alternative` MUST be null.
+- ALT-DECISION MAY set `brief_anchor` to null, but MUST have a non-null
+  `better_alternative` object with all three sub-fields:
+  `current_approach`, `proposed_alternative`, `quantified_tradeoff`.
 
 verdict = "PASS" if and only if issues contains zero CRITICAL items AND
 zero IMPORTANT items. NICE-TO-HAVE items alone do NOT cause NEEDS-CLARIFICATION.
@@ -180,9 +205,27 @@ After Codex returns, extract the final JSON object from the `--json` message str
 - `verdict` is `PASS` or `NEEDS-CLARIFICATION`.
 - `summary` is a string.
 - `issues` is an array.
-- Each issue has `id`, `category`, `severity`, `routing`, `evidence`, `problem`, `suggestion`, and integer `confidence`.
-- Issue enums match the output schema above.
+- Each issue has `id`, `category`, `severity`, `routing`, `evidence`,
+  `brief_anchor`, `better_alternative`, `problem`, `suggestion`, and integer
+  `confidence`.
+- Issue enums match the output schema above: category is one of
+  `COVERAGE-GAP`, `COVERAGE-DRIFT`, `ALT-DECISION`; severity is one of
+  `CRITICAL`, `IMPORTANT`, `NICE-TO-HAVE`; routing is one of `fix-in-spec`,
+  `ask-haze`.
+- If `category` is `COVERAGE-GAP` or `COVERAGE-DRIFT` and `brief_anchor` is
+  null or empty, normalize `severity` to `NICE-TO-HAVE` before writing.
+- If `category` is `ALT-DECISION` and `better_alternative` is null or lacks
+  `current_approach`, `proposed_alternative`, or `quantified_tradeoff`, drop
+  the issue before writing and surface a visible warning.
+- The malformed JSON fallback issue with `id` = `codex-output-unparseable`
+  is a schema exception: skip the `brief_anchor` downgrade rule and the
+  `better_alternative` drop rule for that stub, preserving its IMPORTANT
+  severity and `NEEDS-CLARIFICATION` verdict.
 - Missing `user_impact_description` is not a retry reason; normalize it to `null` before writing so the main loop can downgrade it as a pure technical finding.
+- After all normalize and drop rules run, recompute top-level `verdict` from
+  the final `issues[]`: `PASS` iff zero `CRITICAL` or `IMPORTANT` items remain;
+  otherwise `NEEDS-CLARIFICATION`. The malformed JSON fallback stub keeps
+  `NEEDS-CLARIFICATION` regardless of the computed value.
 
 Write the validated JSON to `<work_dir>/.ohaze/spec-review-verdict.json`.
 
@@ -200,10 +243,12 @@ If Codex output is malformed JSON:
   "issues": [
     {
       "id": "codex-output-unparseable",
-      "category": "MISSING",
+      "category": "COVERAGE-GAP",
       "severity": "IMPORTANT",
       "routing": "ask-haze",
       "evidence": "codex spec review output: malformed JSON",
+      "brief_anchor": "<fallback exception: review system fault, no specific brief line applicable>",
+      "better_alternative": null,
       "problem": "Codex output unparseable",
       "user_impact_description": "Spec review could not confirm whether the planned behavior is clear enough to implement.",
       "suggestion": "Ask haze whether to proceed without spec review, revise the brief, or rerun the review manually.",
