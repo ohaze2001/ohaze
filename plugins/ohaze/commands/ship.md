@@ -60,12 +60,12 @@ After the brief is approved and before Phase 1.5 begins, inspect the approved br
 3. "完成的样子" checklist items are all about restoring expected behavior.
 4. Body contains stack traces, error messages, or bug ticket references.
 
-If 2 or more signals match, trigger exactly one `AskUserQuestion` with the prompt `是否切到 `/ohaze:debug`? 这份 brief 更像 bug 修复而不是 feature ship.` and exactly two options:
+If 3 or more signals match, trigger exactly one `AskUserQuestion` with the prompt "是否切到 `/ohaze:debug`? 这份 brief 更像 bug 修复而不是 feature ship." and exactly two options:
 
 - `切到 /ohaze:debug (Recommended)`
 - `继续 ship`
 
-If haze accepts, cleanly exit because no worktree has been built yet. Print `Ship 流程已干净退出, 请打 /ohaze:debug "<symptom>" 重启` and include a symptom template derived from the brief title. This is a manual restart per KD9. If haze declines, continue silently to Phase 1.5. If fewer than 2 signals match, skip silently.
+If haze accepts, cleanly exit because no worktree has been built yet. Print `Ship 流程已干净退出, 请打 /ohaze:debug "<symptom>" 重启` and include a symptom template derived from the brief title. This is a manual restart per KD9. If haze declines, continue silently to Phase 1.5. If fewer than 3 signals match, skip silently.
 
 ## Phase 1.5 — Claude Auto-Writes Spec
 
@@ -90,12 +90,12 @@ After mandatory code-reading and before boundary questions, inspect the read cod
 2. The brief's reframed core problem is "X is broken" / "X stopped working" rather than "users need X".
 3. The most recent commit on `main` (`git log -1 --oneline`) was a feature add and this ship would conflict with that same area as a fix.
 
-If 2 or more signals match, trigger exactly one `AskUserQuestion` with the prompt `是否切到 `/ohaze:debug`? 代码阅读显示这更像回归修复而不是 feature ship.` and exactly two options:
+If 3 or more signals match, trigger exactly one `AskUserQuestion` with the prompt "是否切到 `/ohaze:debug`? 代码阅读显示这更像回归修复而不是 feature ship." and exactly two options:
 
 - `切到 /ohaze:debug (Recommended)`
 - `继续 ship`
 
-Routing is the same as the Phase 1 → 1.5 checkpoint: accept means clean exit and print `Ship 流程已干净退出, 请打 /ohaze:debug "<symptom>" 重启`; decline means continue silently; fewer than 2 signals means silent skip. This uses manual restart per KD9.
+Routing is the same as the Phase 1 → 1.5 checkpoint: accept means clean exit and print `Ship 流程已干净退出, 请打 /ohaze:debug "<symptom>" 重启`; decline means continue silently; fewer than 3 signals means silent skip. This uses manual restart per KD9.
 
 ### 5 boundary-question triggers
 
@@ -182,12 +182,12 @@ After `plan_path` is returned and before Phase 3.5, inspect the plan shape:
 2. All Acceptance Criteria are about returning to known-good state rather than introducing capability.
 3. The plan touches 3 files or fewer total and none is a new file.
 
-If 2 or more signals match, trigger exactly one `AskUserQuestion` with the prompt `是否切到 `/ohaze:debug`? 这个 plan 形状更像小范围 bug 修复.` and exactly two options:
+If 3 or more signals match, trigger exactly one `AskUserQuestion` with the prompt "是否切到 `/ohaze:debug`? 这个 plan 形状更像小范围 bug 修复." and exactly two options:
 
 - `切到 /ohaze:debug (Recommended)`
 - `继续 ship`
 
-If haze accepts, the worktree already exists, so route through the finishing menu Option 3 discard path, then tell haze to restart manually with `/ohaze:debug "<symptom>"`. This manual restart is intentional per KD9. If haze declines, continue silently to Phase 3.5. If fewer than 2 signals match, skip silently.
+If haze accepts, the worktree already exists, so route through the finishing menu Option 3 discard path, then tell haze to restart manually with `/ohaze:debug "<symptom>"`. This manual restart is intentional per KD9. If haze declines, continue silently to Phase 3.5. If fewer than 3 signals match, skip silently.
 
 ## Phase 3.5 — Plan Summary + Default-Go
 
