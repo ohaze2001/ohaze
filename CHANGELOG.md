@@ -15,6 +15,7 @@
 ### Changed
 
 ### Fixed
+- **spec audit 「越审越深」元问题修复 / spec-audit-scope-reframe**：缩 spec-to-codex-review SKILL audit prompt 任务范围 — 删 B AMBIGUITY + C MISSING + D CONFLICTS 三个 dimension 段（这三个维度都是 implementer 实施阶段越权前置，天然无底洞），保留 A 改名 Functional Coverage + 原 E 改名 Implementation Quality 上提为 B 两个 bounded 维度。配机械锚点：A finding 必填 brief_anchor（cite brief checklist/scenario/out-of-scope line，cite 不出降 NICE-TO-HAVE 不阻塞），B finding 必填 better_alternative 子对象（current_approach + proposed_alternative + quantified_tradeoff，缺一不报）。Category enum 缩为 {COVERAGE-GAP, COVERAGE-DRIFT, ALT-DECISION} 3 值，旧 5 值 AMBIGUITY/MISSING/CONFLICT/DRIFT/ALT-DECISION 中前 4 个全删。新增 `<scope_boundary>` 段明示 implementer 视角问题走现有 `<missing_context_gating>` + Phase 5 cross-source review，audit 阶段不抓。回测：codex-dispatch-reliability ship 9 个 finding 100% 属 B/C/D 维度 → 修后假想 iter 1 PASS。
 
 ### Removed
 
