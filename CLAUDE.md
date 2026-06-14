@@ -9,7 +9,7 @@
 - 类型: 发行产品（Claude Code plugin，会被 `/plugin install` 安装消费）
 - 集群归属: 集群 3 hazeflow（个人 AI 工作流系统）
 - 状态: active
-- 版本: 2.1.1（`plugins/ohaze/.claude-plugin/plugin.json`）
+- 版本: 2.1.2（`plugins/ohaze/.claude-plugin/plugin.json`）
 
 ## Agent 行为约定
 - 继承全局 [`~/CLAUDE.md`](~/CLAUDE.md) 4 编码原则（先想再写 / 极简优先 / 外科手术式改动 / 目标驱动）
