@@ -88,6 +88,7 @@ ohaze 是一个 single-plugin marketplace（仓库根即 marketplace）。
 | 命令 | 作用 |
 |---|---|
 | `/ohaze:ship "需求" [--project <abs-path>]` | 端到端：BDD brief → auto-spec → Codex spec audit → worktree+brief/spec → plan summary → Codex 后台派发 |
+| `/ohaze:debug "症状" [--cause=<猜测原因>] [--project <abs-path>]` | bug fix mode：systematic 4-phase investigation + scope lock + 3 conditional gates，比 ship 更轻 |
 | `/ohaze:ship-review [--more]` | Codex 跑完 harness 自动唤醒落到这里（也可手动）：状态门 → 审查（重试上限 3）→ finishing |
 | `/ohaze:ship-finish [--skip-review]` | 续跑：从 `kept` / `self-edit-pending` 状态恢复，可选再 review，进 finishing |
 | `/ohaze:status` | 跨 worktree 工作流总览：state-first 判定，哪个在跑 / 等审查 / stale |

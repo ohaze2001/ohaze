@@ -15,9 +15,23 @@
 ### Changed
 
 ### Fixed
-- **Codex 输出跨 session 持久化 / codex-output-persistence**：`codex-executor` Phase 4 Step 2 dispatch 命令尾追加 `| tee <worktree>/.ohaze/codex-output.jsonl` — `tee` 复制 stdout 同时写磁盘文件 + 喂给 harness `BashOutput(codex_bg_id)`，双通道并存不破现有主路径。Phase 5.0 background path 报告提取改成 3 档 fallback chain：① BashOutput 主（同 session）→ ② 读 `.ohaze/codex-output.jsonl` tee 文件（跨 session 接续，新增中档）→ ③ spec+plan+git diff 末档降级（codex 报告完全不可用时）。`finishing/SKILL.md` doc-finish 真相源段同步更新 3 档 fallback chain 描述，删去 v2.1 "Future improvement" 候选注释（已 ship）。修复跨 session 跑 `/ohaze:ship-finish` 时 "WARNING: Codex report unavailable (codex_bg_id stale)" 降级 — 只要 worktree 还在，doc-finish 真相源齐全。
 
 ### Removed
+
+## [2.2.0] - 2026-06-15
+
+v2.2.0 主题：流程档位扩展 — 新增 debug bug-fix mode，并让 ship 对误入的 bug 修复做反向 reframe。
+
+### Added
+- **Debug command / debug-command**：新增 `/ohaze:debug` 独立流程档位，走 pre-flight → worktree → `systematic-debugging` 四阶段根因调研 → `debug-to-codex-prompt` scope-lock XML → `codex-executor mode='dispatch'` → 复用 `/ohaze:ship-review` 与 `/ohaze:ship-finish`。
+- **Ship reverse reframe checkpoints / ship-reverse-reframe**：`/ohaze:ship` 在 Phase 1、Phase 1.5 mandatory code-reading 后、Phase 3 plan 后加入三处 bug-shaped signal 检查，命中时提示切到 `/ohaze:debug`，接受后按 KD9 manual restart 干净退出。
+- **`ship_mode` handoff field / ship_mode-field**：`.ohaze/current-ship.json` 新增 `ship_mode: "ship" | "debug"`，`ship-review` 仅在 debug 模式启用 L2 scope_lock breach detection 与 G3 `> 5 files` blast-radius gate。
+
+### Fixed
+- **Codex 输出跨 session 持久化 / codex-output-persistence**：`codex-executor` Phase 4 Step 2 dispatch 命令尾追加 `| tee <worktree>/.ohaze/codex-output.jsonl` — `tee` 复制 stdout 同时写磁盘文件 + 喂给 harness `BashOutput(codex_bg_id)`，双通道并存不破现有主路径。Phase 5.0 background path 报告提取改成 3 档 fallback chain：① BashOutput 主（同 session）→ ② 读 `.ohaze/codex-output.jsonl` tee 文件（跨 session 接续，新增中档）→ ③ spec+plan+git diff 末档降级（codex 报告完全不可用时）。`finishing/SKILL.md` doc-finish 真相源段同步更新 3 档 fallback chain 描述，删去 v2.1 "Future improvement" 候选注释（已 ship）。修复跨 session 跑 `/ohaze:ship-finish` 时 "WARNING: Codex report unavailable (codex_bg_id stale)" 降级 — 只要 worktree 还在，doc-finish 真相源齐全。
+
+### Migration
+- Legacy v2.1.x handoffs that lack `ship_mode` are backward-compatible: downstream commands treat missing `ship_mode` as `"ship"`, so debug-only L2/G3 gates are skipped for existing ships.
 
 ## [2.1.2] - 2026-06-14
 
