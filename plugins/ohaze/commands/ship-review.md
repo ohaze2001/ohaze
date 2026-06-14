@@ -38,6 +38,7 @@ Read `state` from `<worktree>/.ohaze/current-ship.json` and act per this table. 
 | `kept` | Tell the user the previous ship was paused via finish menu option 4 → suggest `/ohaze:ship-finish` to resume. End. |
 | `self-edit-pending` | Tell the user the previous ship was paused via finish menu option 2c → suggest `/ohaze:ship-finish` after their manual edits. End. |
 | `dispatch_failed` | Codex initial or retry dispatch failed liveness check twice (codex 0.137 stdin crash or pre-thread transport failure). Surface `WARNING: ship is in dispatch_failed state. codex_bg_id is null (process killed). thread_id={value or null}.` and tell the user to either rerun `/ohaze:ship` (fresh dispatch, discards thread) or manually resume via `cd <worktree_path> && codex exec resume <thread_id> ...` if thread_id is preserved. Do NOT auto-retry. End. |
+| `blast_radius_escalated` | Debug-mode G3 escalated this repair out of `/ohaze:debug`. Surface a warning and tell haze to restart with `/ohaze:ship` for the full flow. End. |
 
 > The gate eats ghost wake-ups, double `/ohaze:ship-review` invocations, and accidental re-invokes alike. There is no fallback `ScheduleWakeup` because dogfood (spec §3) proved harness re-invoke is reliable; A-plan: state gate is the only defense.
 
@@ -71,6 +72,73 @@ When the harness re-invokes the main agent after a `Bash(run_in_background)` Cod
 ### 5. `--more` flag
 
 If `--more` is present in `$ARGUMENTS`, allow the review-fix loop to exceed the 3-retry cap. Otherwise honor it.
+
+## Phase 5.-0.5 — Compute `touched_files_abs`
+
+This section is debug mode only and runs after Step 3a, before the existing Phase 5.0 commit step inside `ohaze:codex-executor`.
+
+Read `.ohaze/current-ship.json.ship_mode`. If the field is missing, treat as `"ship"` for legacy v2.1.x handoff compatibility. If `ship_mode != "debug"`, skip Phase 5.-0.5, L2, and G3 entirely and proceed to Phase 5.0.
+
+When `ship_mode == "debug"`, compute one read-only in-memory array named `touched_files_abs` from `<worktree_path>` and `<base_ref>`:
+
+1. Files changed in commits since base:
+   ```bash
+   git -C "$worktree_path" diff --name-only "$base_ref"..HEAD
+   ```
+2. Files dirty in the working tree:
+   ```bash
+   git -C "$worktree_path" diff --name-only HEAD
+   ```
+3. Untracked files that are not git-ignored:
+   ```bash
+   git -C "$worktree_path" ls-files --others --exclude-standard
+   ```
+
+De-duplicate the union, normalize each entry to an absolute path under `worktree_path` using `realpath` or equivalent absolute path normalization, and store the result as `touched_files_abs`. This phase has no side effects.
+
+## L2 — scope_lock_files Boundary Enforcement
+
+This section is debug mode only and reads the same `touched_files_abs` snapshot computed in Phase 5.-0.5.
+
+Trigger when `ship_mode == "debug"` and `scope_lock_files` from the handoff is non-empty. Normalize `scope_lock_files` to absolute paths under `worktree_path`, then compute:
+
+```text
+breached_files = touched_files_abs - scope_lock_files
+```
+
+If `breached_files` is empty, proceed to G3.
+
+If `breached_files` is non-empty:
+
+1. Read `<worktree_path>/.ohaze/findings-detail.json`; if missing, create the in-memory base object `{"iteration": <retries>, "findings": []}`.
+2. Preserve unknown top-level fields, override only `iteration` and `findings`, and append one CRITICAL finding per breached file with this shape:
+   ```json
+   {
+     "severity": "CRITICAL",
+     "evidence": "touched_files_abs contains a path outside scope_lock_files: <absolute path>",
+     "technical_description": "Debug scope_lock_files boundary was breached before review. breached_files includes <absolute path>.",
+     "user_impact_description": "The debug fix changed files outside the agreed scope lock, increasing regression risk.",
+     "shown_to_user": false,
+     "auto_handled": "retry-fix"
+   }
+   ```
+3. Write back `findings-detail.json`.
+4. Append a parallel CRITICAL string entry to `<worktree_path>/.ohaze/review-verdict.json.issues` in this format: `CRITICAL: scope_lock breach — <file>`.
+5. Set `.ohaze/review-verdict.json.verdict` to `"FAIL"` if it is currently `"PASS"` so the retry loop handles the breach.
+
+## G3 — Blast-Radius Gate
+
+This section is debug mode only and runs after L2, using the same `touched_files_abs` snapshot. If `ship_mode` is missing, treat as `"ship"` and skip for backward compatibility.
+
+Compute `count = length(touched_files_abs)`.
+
+- If `count <= 5 files`, skip G3 and proceed to Phase 5.0.
+- If `count > 5 files`, trigger exactly one `AskUserQuestion` with exactly three options:
+  1. `接受宽修` — proceed to Phase 5.0 normally.
+  2. `缩 scope` — dispatch `codex exec resume <thread_id>` with an anti-regression prompt naming the current `touched_files_abs` files and asking Codex to reduce the blast radius. Reuse the Phase 6 fix-prompt structure, but issue it from `ship-review`, not via a FAIL verdict. After resume completes and the harness re-invokes `ship-review`, rerun Phase 5.-0.5, L2, and G3. Loop max is 2; on the 3rd G3 entry, escalate to Option 3.
+  3. `升级 ship` — set `.ohaze/current-ship.json.state = "blast_radius_escalated"` using Read-modify-Write, surface a warning, and stop. Haze re-runs `/ohaze:ship` for the full flow.
+
+Order invariant: Phase 5.-0.5 → L2 → G3 → existing Phase 5.0. L2 and G3 read the SAME `touched_files_abs` snapshot.
 
 ## Phase 5–6 — Review + Retry Loop (delegated to `ohaze:codex-executor`)
 
