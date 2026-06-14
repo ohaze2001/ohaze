@@ -45,6 +45,13 @@ ohaze 是一个 single-plugin marketplace（仓库根即 marketplace）。
 
 用户看到的是 feature brief 和产品语言的风险描述，不需要读 spec / plan 的实现细节。Phase 1.5 自动把 brief 转成 spec；Phase 1.6 用 `spec-to-codex-review` 让 Codex 在实现前审 spec；Phase 3.5 只给 plan 一句话摘要，然后默认进入 Codex 实现，仍可被 haze 打断。
 
+v2.2.0 起 ohaze 是 **2-tier flow model**：`/ohaze:ship` 仍是完整 feature ship tier；`/ohaze:debug` 是 debug tier，面向 bug fix，走 4 阶段 systematic investigation（root cause → pattern → hypothesis → implementation），用 `scope_lock_files` 作为 physical-write-boundary defense，再通过 G1 / L2 / G3 条件 gate 控制根因偏离、scope_lock breach、blast radius。
+
+| 档位 | 适用场景 | 核心路径 |
+|---|---|---|
+| `/ohaze:ship` | 新能力 / 复杂 feature / 需要完整 brief+spec+plan 的改动 | BDD brief → auto-spec → spec audit → plan → Codex execute → review → finishing |
+| `/ohaze:debug` | 已知症状的 bug fix / 小范围回归修复 | worktree → 4-phase investigation → scope lock → Codex execute → ship-review L2/G3 → finishing |
+
 | 阶段 | 谁干 | 来源 |
 |---|---|---|
 | 1. brainstorming（BDD/needs-side，终止于 brief approved） | Claude | `ohaze`（fork 自 superpowers v5.1.0，砍 visual companion） |
@@ -67,7 +74,7 @@ ohaze 是一个 single-plugin marketplace（仓库根即 marketplace）。
 - **幂等状态门防幽灵唤醒**：`/ohaze:ship-review` 第一步读 `.ohaze/current-ship.json.state`，按 7 状态查表（`done`/`discarded` → 静默 no-op 吃掉幽灵唤醒）。
 - **不设 ScheduleWakeup**：v2 A 方案 —— harness re-invoke 是唯一主触发，状态门是唯一防御。
 
-### 设计决策（v2.1.0）
+### 设计决策（v2.1.0 / v2.2.0）
 
 - **零运行时外部 skill 依赖**：brainstorming / using-git-worktrees / writing-plans 全部自持（fork 子集，非整仓）。锁基线 superpowers v5.1.0，定期 diff 上游。
 - **流程序 brief → spec audit → worktree brief/spec**：haze 只 approve brief；Claude 自动写 spec，Codex 审 spec；建 worktree 后在 worktree 内写 `docs/ohaze/briefs/` + `docs/ohaze/specs/` 并 commit。
@@ -82,6 +89,11 @@ ohaze 是一个 single-plugin marketplace（仓库根即 marketplace）。
 - **resume 边界**：`resume` 仅用于同一 ship 生命周期（review retry / modify / 第 6 项 ADVERSARIAL 修复）；finishing 后的 bug 修复 = 新 fix ship。
 - **finishing**：`ohaze:finishing` skill 拥有 Phase 7 —— 项目类型检测（local/remote）+ project_category + 6 项菜单 + conditional Security Review + 收尾链 + doc-finish 内化 neat 路由。
 - **产品语言 finding 展示**：`findings-detail.json` 保存技术细节；haze 只看到 `user_impact_description`。
+- **2-tier flow model**：v2.2.0 新增 `/ohaze:debug`，和 `/ohaze:ship` 平级；ship 处理 feature-dev，debug 处理 bug-fix root-cause-first。
+- **`ship_mode` handoff field**：`.ohaze/current-ship.json` 写 `ship_mode: "ship" | "debug"`；legacy 缺失按 `"ship"` 处理，`ship-review` 只在 debug mode 分流 L2/G3。
+- **KD6 三层 scope lock**：L1 prompt `<editable_files>` 白名单，L2 review 阶段比对 touched files vs `scope_lock_files`，L3 G3 blast-radius gate；在 codex 0.137 无文件级 sandbox 前作为最强可行边界。
+- **KD9 manual-restart reframe acceptance**：ship 三处 reframe checkpoint 命中后，haze 接受切 debug 时先干净退出，再提示手动重启 `/ohaze:debug "<symptom>"`，避免跨 command 中段状态转换。
+- **KD10 worktree-before-investigation**：debug 在 Pre-flight 后立即建 worktree，systematic-debugging 全程在隔离 workspace 内跑，避免调研污染 main checkout。
 
 ## 常用命令
 
@@ -115,6 +127,20 @@ ohaze 是一个 single-plugin marketplace（仓库根即 marketplace）。
 # - general-purpose 异源 subagent 审查 git diff vs plan (实跑 project_test_command, 含 ADVERSARIAL + DOC-DRIFT)
 # - 不通过 → codex exec resume <thread_id> 修复 (无 --sandbox), 上限 3 次, 含卡住升级诊断
 # - 通过 → 6 项 finishing 菜单
+```
+
+Debug 主流程：
+
+```text
+/ohaze:debug "codex resume 丢 thread_id" --cause="handoff 没持久化" --project /Users/apple/Project/ohaze
+
+# Claude 做 pre-flight → 先建 worktree → systematic-debugging 4 阶段调研
+# Phase 1 根因若偏离 --cause 猜测才触发 G1；无 --cause 时 G1 不打扰
+# 调研产出 investigation_report + scope_lock_files + fix_plan
+# debug-to-codex-prompt 把三件套包成 Codex XML，<editable_files> 锁定可改文件
+# Codex 执行修复后进入 /ohaze:ship-review
+# ship-review 在 debug mode 先跑 L2 scope_lock breach 检查，再跑 G3 blast-radius gate (>5 files)
+# 通过后复用同一套 cross-source review / retry / finishing 菜单
 ```
 
 ### Finishing 菜单
