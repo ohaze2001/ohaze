@@ -16,7 +16,6 @@ v2.1.0 BDD/TDD restructure：haze 只 approve brief，Claude 自动写 spec，Co
 
 ## Backlog
 - 定期 diff superpowers v5.1.0 上游 brainstorming / using-git-worktrees SKILL.md（基线漂移监控）
-- 持久化 Codex 输出（`codex-executor` Phase 4 `tee` `--json` 到 `<worktree>/.ohaze/codex-output.jsonl`），使 doc-finish 真相源跨 session 可用，消除 F9 的 fallback 降级
 - 如果观察到 plan-drift rate 超过可接受阈值，再加 plan Codex/Claude dry-run audit；当前 v2.1 先依赖 spec audit + implementation review 双闸。
 - spec-to-codex-review schema 校验脚本兜底：机械验「COVERAGE-* finding 的 `brief_anchor` 字符串在 brief 文件中能 grep 到对应内容」+「ALT-DECISION finding 的 `better_alternative` 三子字段全非空」。本 ship (v2.1.2 spec-audit-scope-reframe) Risk R3 提出，作为后续 ship 候选。优先级 = 中（dogfood 跑 3-5 ship 后再评估必要性）
 

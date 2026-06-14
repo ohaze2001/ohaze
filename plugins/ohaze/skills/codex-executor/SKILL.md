@@ -66,7 +66,8 @@ codex exec \
   --cd <worktree_path> \
   --json \
   "$(cat <prompt_file>)" \
-  < /dev/null
+  < /dev/null \
+  | tee <worktree_path>/.ohaze/codex-output.jsonl
 ```
 
 **Strict rules for this dispatch:**
@@ -76,6 +77,7 @@ codex exec \
 - **Must run inside a real git project directory** (`--cd <worktree_path>` points at the ship worktree). codex exec exits non-zero in `/tmp` or any non-git path.
 - **Must close stdin with `< /dev/null`**. codex 0.137 can silently crash when the initial `codex exec --json` prompt is provided via stdin redirect; passing the prompt as the top-level CLI argument and closing stdin avoids that transport failure.
 - **Must dispatch with `Bash(run_in_background: true)`** so the harness owns completion and re-invocation. See Dispatch Mode Vocabulary for why OS-level background is forbidden.
+- **Must pipe stdout through `tee <worktree_path>/.ohaze/codex-output.jsonl`** — `tee` writes a persistent copy of the full `--json` stream to disk while letting `BashOutput(codex_bg_id)` continue to read the live stream (tee duplicates stdout, breaking neither path). The persisted file is the cross-session fallback for Phase 5.0 / doc-finish when `codex_bg_id` expires (`/exit` between dispatch and finish). `.ohaze/` is already gitignored — the file is runtime artifact, never committed.
 
 ### Step 2.5 — Dispatch liveness check
 
@@ -134,7 +136,10 @@ Triggered when the background Codex task completes — the harness re-invokes th
 ohaze keeps commit authority at the orchestrator (Claude main session) by convention — see `plan-to-codex-prompt`'s `<commit_handling>`. Codex therefore leaves uncommitted changes in the worktree; the orchestrator commits them before review.
 
 1. Read Codex's final report from the `--json` stream. Source depends on dispatch mode:
-   - **Background path (default, set by Phase 4 / Phase 6 retry)**: `BashOutput(codex_bg_id) filter='"type":"message"'` reads the streamed `--json` events. The `filter` parameter is REQUIRED — codex's full `--json` stream for a multi-hour run can reach 5-20 MB; without filter the entire buffer would be pulled into context and likely exhaust the window. The filter keeps only the structured-report message events. (Same defense as ship-review.md Step 3a's filter usage.)
+   - **Background path (default, set by Phase 4 / Phase 6 retry)** — try in order until one succeeds:
+     1. **Primary (same-session)**: `BashOutput(codex_bg_id) filter='"type":"message"'`. The `filter` parameter is REQUIRED — codex's full `--json` stream for a multi-hour run can reach 5-20 MB; without filter the entire buffer would be pulled into context and likely exhaust the window. The filter keeps only the structured-report message events. (Same defense as ship-review.md Step 3a's filter usage.)
+     2. **Cross-session fallback (v2.1.3+)**: if `BashOutput` returns "no such task" (harness lost the bg_id after `/exit` between dispatch and review/finish), read the teed file directly: `Bash(tail -c 200000 <worktree_path>/.ohaze/codex-output.jsonl)` then scan the tail for the final `agent_message` event. Phase 4 Step 2's mandatory tee guarantees this file exists for any v2.1.3+ dispatch.
+     3. **Final degradation**: if the tee file is also missing (extremely rare — manual `.ohaze/` cleanup, or a pre-v2.1.3 worktree without tee), surface one short warning to the caller and proceed without Codex's report. Downstream callers (e.g. doc-finish) have their own end-stage fallback chain (spec + plan + git diff).
    - **Foreground path (set by `ohaze:finishing` 6th option / modify 2a)**: caller passes input `codex_report_source` = absolute path to a teed `.ohaze/codex-*-output.jsonl` file. Use `Bash(tail -c 200000 <file>)` then scan for the final `message` event. **Do not** use `BashOutput(codex_bg_id)` on this path — `codex_bg_id` still points at the prior background dispatch (stale stream).
 
    The final `message` event contains the structured report (Tasks completed / Touched files / Notable choices / suggested per-Task commit messages). **Do not rely on `-o/--output-last-message`** — that flag does not produce a file when `--json` is set (verified against codex 0.137 in dogfood).

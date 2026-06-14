@@ -15,9 +15,14 @@
 ### Changed
 
 ### Fixed
-- **spec audit 「越审越深」元问题修复 / spec-audit-scope-reframe**：缩 spec-to-codex-review SKILL audit prompt 任务范围 — 删 B AMBIGUITY + C MISSING + D CONFLICTS 三个 dimension 段（这三个维度都是 implementer 实施阶段越权前置，天然无底洞），保留 A 改名 Functional Coverage + 原 E 改名 Implementation Quality 上提为 B 两个 bounded 维度。配机械锚点：A finding 必填 brief_anchor（cite brief checklist/scenario/out-of-scope line，cite 不出降 NICE-TO-HAVE 不阻塞），B finding 必填 better_alternative 子对象（current_approach + proposed_alternative + quantified_tradeoff，缺一不报）。Category enum 缩为 {COVERAGE-GAP, COVERAGE-DRIFT, ALT-DECISION} 3 值，旧 5 值 AMBIGUITY/MISSING/CONFLICT/DRIFT/ALT-DECISION 中前 4 个全删。新增 `<scope_boundary>` 段明示 implementer 视角问题走现有 `<missing_context_gating>` + Phase 5 cross-source review，audit 阶段不抓。回测：codex-dispatch-reliability ship 9 个 finding 100% 属 B/C/D 维度 → 修后假想 iter 1 PASS。
+- **Codex 输出跨 session 持久化 / codex-output-persistence**：`codex-executor` Phase 4 Step 2 dispatch 命令尾追加 `| tee <worktree>/.ohaze/codex-output.jsonl` — `tee` 复制 stdout 同时写磁盘文件 + 喂给 harness `BashOutput(codex_bg_id)`，双通道并存不破现有主路径。Phase 5.0 background path 报告提取改成 3 档 fallback chain：① BashOutput 主（同 session）→ ② 读 `.ohaze/codex-output.jsonl` tee 文件（跨 session 接续，新增中档）→ ③ spec+plan+git diff 末档降级（codex 报告完全不可用时）。`finishing/SKILL.md` doc-finish 真相源段同步更新 3 档 fallback chain 描述，删去 v2.1 "Future improvement" 候选注释（已 ship）。修复跨 session 跑 `/ohaze:ship-finish` 时 "WARNING: Codex report unavailable (codex_bg_id stale)" 降级 — 只要 worktree 还在，doc-finish 真相源齐全。
 
 ### Removed
+
+## [2.1.2] - 2026-06-14
+
+### Fixed
+- **spec audit 「越审越深」元问题修复 / spec-audit-scope-reframe**：缩 spec-to-codex-review SKILL audit prompt 任务范围 — 删 B AMBIGUITY + C MISSING + D CONFLICTS 三个 dimension 段（这三个维度都是 implementer 实施阶段越权前置，天然无底洞），保留 A 改名 Functional Coverage + 原 E 改名 Implementation Quality 上提为 B 两个 bounded 维度。配机械锚点：A finding 必填 brief_anchor（cite brief checklist/scenario/out-of-scope line，cite 不出降 NICE-TO-HAVE 不阻塞），B finding 必填 better_alternative 子对象（current_approach + proposed_alternative + quantified_tradeoff，缺一不报）。Category enum 缩为 {COVERAGE-GAP, COVERAGE-DRIFT, ALT-DECISION} 3 值，旧 5 值 AMBIGUITY/MISSING/CONFLICT/DRIFT/ALT-DECISION 中前 4 个全删。新增 `<scope_boundary>` 段明示 implementer 视角问题走现有 `<missing_context_gating>` + Phase 5 cross-source review，audit 阶段不抓。回测：codex-dispatch-reliability ship 9 个 finding 100% 属 B/C/D 维度 → 修后假想 iter 1 PASS。
 
 ### Planned
 - **未来某版** — tool-router（按任务复杂度自动路由 Codex / Claude / Gemini / DeepSeek，从 v1.x Planned 顺延，待 v2 稳定后重启评估）
