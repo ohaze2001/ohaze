@@ -51,6 +51,22 @@ Invoke `ohaze:brainstorming` with the feature description.
 >
 > **Phase 1 hand-off invariant:** ONCE `ohaze:brainstorming` has cleared the Brief Approval Gate and declared `brief approved`, continue in the same assistant turn to Phase 1.5. This is a return-from-subroutine signal, not a place to stop. The two are independent: gate is BLOCKING (wait for haze), hand-off is NON-BLOCKING (do not wait).
 
+### Phase 1 → 1.5 reframe checkpoint
+
+After the brief is approved and before Phase 1.5 begins, inspect the approved brief content for bug-shaped signals:
+
+1. Every Scenario phrases problem-elimination ("修复 X" / "Fix X") rather than positive capability.
+2. Out of Scope lists "新 feature" or equivalent exclusion.
+3. "完成的样子" checklist items are all about restoring expected behavior.
+4. Body contains stack traces, error messages, or bug ticket references.
+
+If 2 or more signals match, trigger exactly one `AskUserQuestion` with the prompt `是否切到 `/ohaze:debug`? 这份 brief 更像 bug 修复而不是 feature ship.` and exactly two options:
+
+- `切到 /ohaze:debug (Recommended)`
+- `继续 ship`
+
+If haze accepts, cleanly exit because no worktree has been built yet. Print `Ship 流程已干净退出, 请打 /ohaze:debug "<symptom>" 重启` and include a symptom template derived from the brief title. This is a manual restart per KD9. If haze declines, continue silently to Phase 1.5. If fewer than 2 signals match, skip silently.
+
 ## Phase 1.5 — Claude Auto-Writes Spec
 
 Claude writes the implementation spec from the approved brief. Haze does not review the spec by default.
@@ -65,6 +81,21 @@ Before writing the spec, list and read relevant files in these 4 categories:
 4. CHANGELOG similar entries and prior decisions.
 
 The spec MUST cite concrete `file:line` references. If a category is genuinely absent, state that in the spec instead of inventing context.
+
+### Mid-spec reframe checkpoint
+
+After mandatory code-reading and before boundary questions, inspect the read code refs and brief shape for debug-mode signals:
+
+1. Code refs are dominated by stack-trace files, error log files, or files mentioned in recent `CHANGELOG.md` `## [Unreleased] Fixed` entries.
+2. The brief's reframed core problem is "X is broken" / "X stopped working" rather than "users need X".
+3. The most recent commit on `main` (`git log -1 --oneline`) was a feature add and this ship would conflict with that same area as a fix.
+
+If 2 or more signals match, trigger exactly one `AskUserQuestion` with the prompt `是否切到 `/ohaze:debug`? 代码阅读显示这更像回归修复而不是 feature ship.` and exactly two options:
+
+- `切到 /ohaze:debug (Recommended)`
+- `继续 ship`
+
+Routing is the same as the Phase 1 → 1.5 checkpoint: accept means clean exit and print `Ship 流程已干净退出, 请打 /ohaze:debug "<symptom>" 重启`; decline means continue silently; fewer than 2 signals means silent skip. This uses manual restart per KD9.
 
 ### 5 boundary-question triggers
 
@@ -143,6 +174,21 @@ Invoke `ohaze:writing-plans`. It saves a guidance plan to `docs/ohaze/plans/<dat
 - Do not invoke `superpowers:subagent-driven-development` or `superpowers:executing-plans`; Codex is the implementer.
 - The skill hands back to Phase 3.5 instead of waiting.
 
+### Post-plan reframe checkpoint
+
+After `plan_path` is returned and before Phase 3.5, inspect the plan shape:
+
+1. All Tasks are phrased as "restore X" / "fix Y" / no new public interface added.
+2. All Acceptance Criteria are about returning to known-good state rather than introducing capability.
+3. The plan touches 3 files or fewer total and none is a new file.
+
+If 2 or more signals match, trigger exactly one `AskUserQuestion` with the prompt `是否切到 `/ohaze:debug`? 这个 plan 形状更像小范围 bug 修复.` and exactly two options:
+
+- `切到 /ohaze:debug (Recommended)`
+- `继续 ship`
+
+If haze accepts, the worktree already exists, so route through the finishing menu Option 3 discard path, then tell haze to restart manually with `/ohaze:debug "<symptom>"`. This manual restart is intentional per KD9. If haze declines, continue silently to Phase 3.5. If fewer than 2 signals match, skip silently.
+
 ## Phase 3.5 — Plan Summary + Default-Go
 
 Print a one-line user-facing summary:
@@ -205,6 +251,7 @@ Create `<worktree_path>/.ohaze/current-ship.json` with:
 ```json
 {
   "state": "running",
+  "ship_mode": "ship",
   "slug": "<feature-slug>",
   "branch": "feat/<slug>",
   "base_ref": "main",
@@ -225,6 +272,7 @@ Create `<worktree_path>/.ohaze/current-ship.json` with:
 
 Field semantics:
 
+- `ship_mode`: enum `"ship" | "debug"`, defaults to `"ship"` in this file. `/ohaze:debug` writes `"debug"` explicitly. Downstream (`ship-review`, `finishing`) routes by this; v2.2.0 only `ship-review` actually branches (L2 scope_lock + G3 blast-radius).
 - `brief_path`: Phase 2b brief file, consumed by finishing/doc-finish and Security Review trigger logic.
 - `spec_review_iteration`: Phase 1.6 loop counter, default 0; separate from Phase 6 `retries`.
 - `project_category`: `web | api | cli | plugin | agent | other | null`; set to `null` here and later filled by `ohaze:finishing`.
