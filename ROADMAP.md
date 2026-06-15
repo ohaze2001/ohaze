@@ -17,6 +17,9 @@ v2.2.0 流程档位扩展：debug 修复档位 + ship 反向 reframe + `ship_mod
 - 定期 diff superpowers v5.1.0 上游 systematic-debugging/SKILL.md（debug fork 基线漂移监控）
 - 如果观察到 plan-drift rate 超过可接受阈值，再加 plan Codex/Claude dry-run audit；当前 v2.1 先依赖 spec audit + implementation review 双闸。
 - spec-to-codex-review schema 校验脚本兜底：机械验「COVERAGE-* finding 的 `brief_anchor` 字符串在 brief 文件中能 grep 到对应内容」+「ALT-DECISION finding 的 `better_alternative` 三子字段全非空」。本 ship (v2.1.2 spec-audit-scope-reframe) Risk R3 提出，作为后续 ship 候选。优先级 = 中（dogfood 跑 3-5 ship 后再评估必要性）
+- **CHANGELOG v2.1.2 段回测预言修正 (doc-drift 小补丁)**：v2.1.2 段写「回测：codex-dispatch-reliability ship 9 个 finding 100% 属 B/C/D 维度 → 修后假想 iter 1 PASS」过于乐观。v2.2.0 debug-command ship dogfood 实测 iter 1 4 finding + iter 2 2 finding 触发 max loop，但 6/6 finding 都在新两轴 bounded 维度内（无越权前置），说明 v2.1.2 的真实目标是「防越审越深」而非「iter 1 PASS」。把回测预言改成更窄目标，避免误读。下次 ship 顺便修
+- **Phase 1.5 spec quality self-check (跨 ship 工艺改进)**：v2.2.0 debug-command dogfood 暴露 Phase 1.5 写 spec 容易漏 brief 真实点 (本次漏了 6 个: cross-command reframe 不完整 / scope lock 没写物理 / worktree 顺序错 / regression test 无 pre-fix 失败 / touched-files 用 commit 后 diff / KD8 只埋 2 处)。所有 6 个都被 audit 抓到，但本应 Phase 1.5 自己写好。候选: spec writing 阶段加 "对每条 brief checkbox 写一条 spec mapping" 的 self-check checklist，或者在 spec 模板里嵌入 brief↔spec 对照表。优先级 = 中 (dogfood 3-5 ship 后看是否高频复现再评估具体落地)
+- **历史 v2.1.1 / v2.1.2 / v2.1.3 缺 tag 补打 (contract drift, hygiene)**：`git tag -l 'v2.*'` 显示只有 v2.0.0 / v2.1.0 / v2.2.0，三个 patch release 缺 annotated tag，违反全局 CLAUDE.md「发行产品 = 完整 SemVer + tag + CHANGELOG」契约。补打方式: 对每个 CHANGELOG 已有的 [2.1.x] 段找到对应 release commit，打 `git tag -a v2.1.x -m "..."` + `git push origin v2.1.x`。优先级 = 低 (纯 hygiene，不阻塞功能；可作为下次小 ship 顺便补)
 
 ## Bug
 ## 长期目标
