@@ -94,7 +94,7 @@ Security Review trigger:
 | `project_category in {web, api}` | `.ohaze/current-ship.json.project_category` written above |
 | `has_external_input: true` | brief metadata, or explicit brief/spec language about external user input |
 
-Use `AskUserQuestion` with the menu. The menu has **6 options when `has_adversarial`**, **5 options otherwise**, and may show a 7th conditional item:
+Use `AskUserQuestion` with question `"Codex 跑完了,接下来怎么收尾?"`. The menu has **6 options when `has_adversarial`**, **5 options otherwise**, and may show a 7th conditional item:
 
 1. 执行推荐收尾 (一键到底)
 2. 继续修改
@@ -136,7 +136,7 @@ Before selection, display only product-language findings:
 
 Selecting it runs an ADVERSARIAL-fix mini-loop before any terminal action:
 
-1. **Select which ADVERSARIAL items to fix.** Use `AskUserQuestion` (multi-select) listing `user_impact_description` only. Do not surface raw `evidence`, file paths, function names, or `technical_description` in the haze-facing menu. The selected findings still carry technical detail from `findings-detail.json` into the Codex fix prompt.
+1. **Select which ADVERSARIAL items to fix.** Use `AskUserQuestion` (multi-select) with question `"哪些对抗审查 finding 要修?"`, listing `user_impact_description` only. Do not surface raw `evidence`, file paths, function names, or `technical_description` in the haze-facing menu. The selected findings still carry technical detail from `findings-detail.json` into the Codex fix prompt.
 
 2. **Build a fix prompt** mirroring `ohaze:codex-executor` Phase 6's structure (issues + anti-regression + action-safety + verification-loop), but with the selected ADVERSARIAL items as `<task>` content. Be explicit that these are design-level concerns the user has accepted as actionable.
 

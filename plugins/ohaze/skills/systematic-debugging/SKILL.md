@@ -123,7 +123,7 @@ You MUST complete each phase before proceeding to the next.
 
 If `cause_hypothesis is null`, G1 is inactive; proceed to Phase 2.
 
-If `cause_hypothesis` is present, compare Phase 1's emerging root-cause hypothesis to it for semantic alignment, not verbatim wording. On material divergence, trigger exactly one `AskUserQuestion` with exactly these three options:
+If `cause_hypothesis` is present, compare Phase 1's emerging root-cause hypothesis to it for semantic alignment, not verbatim wording. On material divergence, trigger exactly one `AskUserQuestion` with question `"调研根因与你的猜测有出入,怎么处理?"` and exactly these three options:
 
 1. `接受调研根因 (Recommended)` — accept the evidence-backed root cause and continue.
 2. `重新调研` — return to Phase 1 and gather more evidence.
@@ -183,7 +183,7 @@ Add Phase 2 results to `investigation_report`.
 
 #### G2 — 3-Strike Escalation
 
-If Phase 3 forms 3 or more distinct hypotheses that all fail testing, STOP. Trigger exactly one `AskUserQuestion` with exactly these three options:
+If Phase 3 forms 3 or more distinct hypotheses that all fail testing, STOP. Trigger exactly one `AskUserQuestion` with question `"3 个假设全部失败,接下来怎么办?"` and exactly these three options:
 
 1. `换思路` — return to Phase 1 and change the investigation strategy.
 2. `升级 ship` — stop debug and tell haze to restart with `/ohaze:ship`.

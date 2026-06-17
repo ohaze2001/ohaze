@@ -15,6 +15,7 @@
 ### Changed
 
 ### Fixed
+- debug gate prompt 中文化 / debug-i18n-gate-prompts: 7 处 `AskUserQuestion` 补显式中文 question + 选项措辞统一中文，覆盖 systematic-debugging G1/G2、finishing 主菜单/ADVERSARIAL 多选、ship Phase 3.5/spec audit/spec-review iter3+、debug 空 symptom。
 
 ### Removed
 

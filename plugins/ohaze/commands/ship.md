@@ -99,7 +99,7 @@ Routing is the same as the Phase 1 → 1.5 checkpoint: accept means clean exit a
 
 ### 5 boundary-question triggers
 
-Use `AskUserQuestion` only when one of these product-impact triggers is hit. Each question is single-point, not an open dialog:
+Use `AskUserQuestion` only when one of these product-impact triggers is hit. Each question is single-point, not an open dialog. The `question` field MUST be a Chinese sentence summarizing the specific decision haze needs to make for the hit trigger (e.g. for trigger 1: `"<X> 这个外部依赖你想用哪个?"`); option labels follow the same Chinese-language convention:
 
 1. External API choice or dependency affects functionality, cost, or launch path.
 2. Deployment target or launch impact needs a product decision.
@@ -135,7 +135,7 @@ Read the verdict:
   - `fix-in-spec`: Claude edits the spec and reruns Phase 1.6.
   - `ask-haze`: batch all product/scope questions into one `AskUserQuestion`, edit the spec with answers, and rerun Phase 1.6.
 
-Loop max is 2 review iterations. On iteration 3+ with remaining issues, surface 3 options to haze: accept current spec as-is / revise brief / drop feature.
+Loop max is 2 review iterations. On iteration 3+ with remaining issues, trigger one `AskUserQuestion` with question `"Spec 审查 3 轮还有遗留 issue,怎么办?"` and exactly these three options: `接受当前 spec` / `修订 brief` / `丢弃 feature`.
 
 If Phase 1.6 ran pre-worktree and created `<main_repo_path>/.ohaze/spec-review-verdict.json`, migrate or clean that temporary verdict after Phase 2 creates the worktree.
 
@@ -197,14 +197,14 @@ Print a one-line user-facing summary:
 📋 Plan 写好了 → docs/ohaze/plans/<file>.md, 拆了 <N> 个 Task,涉及 <X / Y / Z 三块>, 准备进 Codex 实现
 ```
 
-Then ask one single-point `AskUserQuestion` before Phase 4 dispatch. This is the real interruption window.
+Then ask one single-point `AskUserQuestion` with question `"Plan 准备好了,进 Codex 实现?"` before Phase 4 dispatch. This is the real interruption window.
 
 Use exactly two choices:
 
-- `go` — **Recommended**. Proceed to Phase 4 dispatch.
+- `继续 (Recommended)` — Proceed to Phase 4 dispatch.
 - `打断` — Pause before dispatch and enter the modify/cancel branch owned by `ohaze:finishing`.
 
-Default-go semantics in v2.1 mean the recommended choice is `go` and the prompt is intentionally minimal; it does **not** mean dispatching before haze has an input boundary. If haze chooses `go`, proceed to Phase 4 immediately in the same resumed turn. If haze chooses `打断` or provides other non-go content, do not dispatch Codex; route to the modify/cancel branch. Keep the prompt product-language only and do not show task-level implementation detail unless the user explicitly asks.
+Default-go semantics in v2.1 mean the recommended choice is `继续` and the prompt is intentionally minimal; it does **not** mean dispatching before haze has an input boundary. If haze chooses `继续`, proceed to Phase 4 immediately in the same resumed turn. If haze chooses `打断` or provides other non-go content, do not dispatch Codex; route to the modify/cancel branch. Keep the prompt product-language only and do not show task-level implementation detail unless the user explicitly asks.
 
 ## Phase 4 — Hand Off To Codex (run_in_background, no nohup, no ScheduleWakeup)
 

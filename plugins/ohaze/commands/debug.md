@@ -8,7 +8,7 @@ Orchestrate the ohaze debug workflow for bug fixes.
 
 `$ARGUMENTS`
 
-Treat `$ARGUMENTS` as a required symptom string plus optional `--cause=<text>` and optional `--project <abs-path>`. If `$ARGUMENTS` is empty, use `AskUserQuestion` once to ask for the symptom before continuing. `--cause=` with an empty value is treated as `null`.
+Treat `$ARGUMENTS` as a required symptom string plus optional `--cause=<text>` and optional `--project <abs-path>`. If `$ARGUMENTS` is empty, use `AskUserQuestion` once with question `"这次要 debug 什么症状?"` to ask for the symptom before continuing. `--cause=` with an empty value is treated as `null`.
 
 ## Pre-flight
 
