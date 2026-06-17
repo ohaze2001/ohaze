@@ -154,6 +154,8 @@ Note the contrast with the upstream superpowers writing-plans: steps still exist
 
 ## Task Structure (guidance form)
 
+> **禁列四件套 as Task deliverables:** Do not put `CLAUDE.md`, `README.md`, `ROADMAP.md`, `CHANGELOG.md`, or the project manifest (`plugin.json` / `package.json` / `Cargo.toml` / etc.) in any Task's Files list for routine doc synchronization. These writes are closed by `ohaze:finishing`'s `doc-finish` step. Acceptance Criteria must not assert four-piece side effects such as "CHANGELOG entry exists" or "ROADMAP ticked". If the spec says the four-piece must be updated, add one note at the end of the plan: `四件套同步由 doc-finish 收口`; do not create a Task for it.
+
 Every Task uses this exact structure:
 
 ````markdown
@@ -221,6 +223,7 @@ Every step must contain real, actionable content. These are **plan failures** �
 - "Similar to Task N" — restate the contract (the reader may be reading Tasks out of order)
 - Acceptance criteria that aren't checkable ("should work well")
 - References to interfaces, types, or files not defined in any Task or import
+- 四件套写入 as Task deliverables (`CLAUDE.md` / `README.md` / `ROADMAP.md` / `CHANGELOG.md` / manifest) — delete them from the Task and hang them under `doc-finish` closure per the Task Structure `禁列四件套` callout.
 
 ---
 
