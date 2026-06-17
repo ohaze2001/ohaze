@@ -235,13 +235,18 @@ It handles **four classes** of document change (internalized from `neat`'s four-
 
 ### Class 1 — Progress machine-readable contract
 
-- Append an appropriate `[Unreleased]` or version entry to `CHANGELOG.md` at `main_repo_path`.
+- Append an appropriate `[Unreleased]` or version entry to `CHANGELOG.md` at `main_repo_path`, following `~/Project/hazeflow/_shared/versioning.md ## CHANGELOG 写作风格`:
+  - 单 bullet ≤ 200 字符.
+  - 视角 = 消费者感知.
+  - 末尾必带 commit hash (可选追加 spec/plan path link).
+  - 禁内嵌过程性内容; forbidden-detail清单只引用 versioning.md, do not duplicate it here.
 - Bump the manifest `version` (`package.json` / `Cargo.toml` / `.claude-plugin/plugin.json` / etc.).
-- Tick the exact `linked_todo` line in the main project `ROADMAP.md` "## 当前主线" section from `- [ ]` to `- [x]` (matched by the exact todo text, stored in handoff per `ship.md` Step A). Per global four-piece contract dashboard checkboxes live in `ROADMAP.md`, not `CLAUDE.md`.
+- Prune the exact `linked_todo` line from the main project `ROADMAP.md` "## 当前主线" section: when found, 整行删除 (matched by the exact todo text, stored in handoff per `ship.md` Step A). WHY: `~/CLAUDE.md` iron law says "CHANGELOG 朝过去 / ROADMAP 朝未来", so shipped current-line todos leave the future dashboard instead of becoming completed checkmarks.
 - Branches:
   - `linked_todo` is `null` → skip this sub-step silently (no todo was linked at ship time).
-  - `linked_todo` non-null AND exact text found in `ROADMAP.md` `## 当前主线` → tick `- [ ]` → `- [x]`.
-  - `linked_todo` non-null BUT exact text NOT found in `ROADMAP.md` `## 当前主线` (cross-version case: pre-F8 handoff captured from CLAUDE.md before the F8 contract; OR user manually edited ROADMAP between ship dispatch and finish): emit one explicit WARNING and skip the tick — `WARNING: linked_todo "<text>" not found in <main_repo_path>/ROADMAP.md ## 当前主线. Either the handoff was created before the linked_todo→ROADMAP.md contract (pre-F8), or the ROADMAP was edited mid-ship. Tick skipped; please tick manually if the todo still belongs there.` Continue to the other Class steps.
+  - `linked_todo` non-null AND exact text found in `ROADMAP.md` `## 当前主线` → 整行删除; do not leave `- [x]`, `~~strikethrough~~`, or a blank line.
+  - `linked_todo` non-null BUT exact text NOT found in `ROADMAP.md` `## 当前主线` (cross-version case: pre-F8 handoff captured from CLAUDE.md before the F8 contract; OR user manually edited ROADMAP between ship dispatch and finish): emit one explicit WARNING and skip the prune — `WARNING: linked_todo "<text>" not found in <main_repo_path>/ROADMAP.md ## 当前主线. Either the handoff was created before the linked_todo→ROADMAP.md contract (pre-F8), or the ROADMAP was edited mid-ship. Prune skipped; please prune manually if the todo still belongs there.` Continue to the other Class steps.
+  - If pruning leaves `## 当前主线` with only its topic sentence and no todo lines, keep the topic sentence intact; this records that the current mainline is cleared without forcing an empty section rewrite.
 
 ### Class 2 — Drift repair (from review-verdict.json)
 
