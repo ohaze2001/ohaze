@@ -26,7 +26,7 @@ ohaze 是一个 single-plugin marketplace（仓库根即 marketplace）。
 **从 GitHub 安装（推荐）**
 
 ```text
-/plugin marketplace add muling-dev/ohaze
+/plugin marketplace add ohaze2001/ohaze
 /plugin install ohaze@ohaze
 ```
 
@@ -108,7 +108,7 @@ v2.2.0 起 ohaze 是 **2-tier flow model**：`/ohaze:ship` 仍是完整 feature 
 开发期常用：
 
 - 改完插件文件：`/plugin marketplace update ohaze`（拉新版）
-- 推 GitHub：`gh repo create muling-dev/ohaze --public --source=. --push`
+- 推 GitHub：`gh repo create ohaze2001/ohaze --public --source=. --push`
 
 ## 使用
 

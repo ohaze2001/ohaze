@@ -294,8 +294,8 @@ v2.1 主题:把 haze 从 spec/plan/技术 finding 视野中拿掉。
 
 ---
 
-[Unreleased]: https://github.com/muling-dev/ohaze/compare/v1.9.0...HEAD
-[1.9.0]: https://github.com/muling-dev/ohaze/releases/tag/v1.9.0
-[1.8.0]: https://github.com/muling-dev/ohaze/releases/tag/v1.8.0
-[1.7.0]: https://github.com/muling-dev/ohaze/releases/tag/v1.7.0
-[1.6.0]: https://github.com/muling-dev/ohaze/releases/tag/v1.6.0
+[Unreleased]: https://github.com/ohaze2001/ohaze/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/ohaze2001/ohaze/releases/tag/v1.9.0
+[1.8.0]: https://github.com/ohaze2001/ohaze/releases/tag/v1.8.0
+[1.7.0]: https://github.com/ohaze2001/ohaze/releases/tag/v1.7.0
+[1.6.0]: https://github.com/ohaze2001/ohaze/releases/tag/v1.6.0

@@ -39,7 +39,7 @@
 - 数据契约: `.ohaze/current-ship.json`（ship handoff，权威 schema 在 `commands/ship.md`）+ `.ohaze/review-verdict.json`（审查结论 + ADVERSARIAL/doc_drift）+ `.ohaze/findings-detail.json`（产品语言展示单一真相源）
 - 产物路径: `docs/ohaze/briefs/` / `docs/ohaze/specs/` / `docs/ohaze/plans/`
 - 测试: 无自动化测试套件（Markdown plugin），靠 grep/test/JSON-load 结构断言 + dogfood 端到端冒烟验证
-- 部署: 本地 `/plugin marketplace add <path>` 或远程 `muling-dev/ohaze`；详见 README `## 安装 / 部署`
+- 部署: 本地 `/plugin marketplace add <path>` 或远程 `ohaze2001/ohaze`；详见 README `## 安装 / 部署`
 
 ## 集成点
 - 硬依赖: `codex` CLI 二进制（`@openai/codex`，版本基线 0.137，ship 直调 `codex exec` / `codex exec resume`）

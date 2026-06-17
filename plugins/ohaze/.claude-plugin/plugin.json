@@ -3,11 +3,11 @@
   "version": "2.2.1",
   "description": "Self-contained Claude Code workflow plugin: brainstorm + plan + Codex execute + adversarial cross-source review + finishing. Zero runtime external skill dependencies.",
   "author": {
-    "name": "muling-dev",
-    "email": "viv1dguycn@gmail.com"
+    "name": "ohaze2001",
+    "email": "287884038+ohaze2001@users.noreply.github.com"
   },
-  "homepage": "https://github.com/muling-dev/ohaze",
-  "repository": "https://github.com/muling-dev/ohaze",
+  "homepage": "https://github.com/ohaze2001/ohaze",
+  "repository": "https://github.com/ohaze2001/ohaze",
   "license": "MIT",
   "keywords": [
     "workflow",
