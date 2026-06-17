@@ -26,6 +26,7 @@
   - Dispatch mode 术语 anchor 在 `codex-executor/SKILL.md` 顶层 Dispatch Mode Vocabulary 段：harness background（允许）/ OS-level background（禁止）/ foreground sync（仅 finishing 6th-option + modify 2a 架构例外）；其他 SKILL cross-ref 不再各自定义
   - resume 只在同一 ship 生命周期内（review retry / modify / finishing 第 6 项 ADVERSARIAL 修复）；finishing 后的 bug 修复 = 新 fix ship
   - `/ohaze:debug` 独立于 `/ohaze:ship`：debug 写 `ship_mode: "debug"` handoff 字段供下游分流；`ship-review` 的 G3 blast-radius gate 只在 debug mode 触发
+  - doc-finish 是四件套 (CLAUDE.md/README.md/ROADMAP.md/CHANGELOG.md/manifest) 写入唯一收口；Codex 实施期间禁直接写四件套 (即便 plan Task 错列)，由 plan-to-codex-prompt 双闸拦截 + writing-plans 红线源头预防
 - 流程序: brainstorm（brief only）→ spec → Codex spec audit → worktree + brief/spec → plan → default-go → Codex
 - debug 流程序: pre-flight → worktree → systematic-debugging (含 G1) → debug-to-codex-prompt → Codex execute → ship-review (含 L2 + G3) → ship-finishing
 - 分支策略: 由 `/ohaze:ship` 自动判断类型（feat/fix/hotfix）+ 起分支名（slug = feature 描述）；遵循全局 git 分支 4 规则

@@ -6,10 +6,6 @@
 ## 当前主线
 v2.2.0 流程档位扩展：debug 修复档位 + ship 反向 reframe + `ship_mode` 下游分流。
 
-- [x] `/ohaze:debug`：systematic-debugging 四阶段根因调研 + scope-lock prompt + 复用 ship-review/finishing
-- [x] `/ohaze:ship` reverse reframe checkpoints：Phase 1 / Phase 1.5 / Phase 3 三处提示误入 bug 修复切 debug
-- [x] `ship_mode` + ship-review branching：debug-only L2 scope_lock enforcement + G3 blast-radius gate
-
 ## Backlog
 - **`/ohaze:auto-ship` 命令（流程档位：中 — 小功能轻流程）**：介于 ship 和 debug 之间，跳过 BDD brainstorm + spec audit 的重 phase，brief→plan→execute→review 一条线；fork `superpowers:test-driven-development` 红绿节奏进自持版作为"必须有失败过的测试"边界。等 `/ohaze:debug` 跑通后边界更清楚再开
 - **`/ohaze:loop` 命令（流程档位：零 — goal 驱动全自动无审）**：fork `superpowers:subagent-driven-development` 两阶段自动 review（spec→quality）+ `superpowers:dispatching-parallel-agents` 并行调度进自持版；prompt 驱动而非文档驱动，终态自动合并；最激进档位，等前两个有 dogfood 经验做安全网后再开
@@ -20,9 +16,6 @@ v2.2.0 流程档位扩展：debug 修复档位 + ship 反向 reframe + `ship_mod
 - **CHANGELOG v2.1.2 段回测预言修正 (doc-drift 小补丁)**：v2.1.2 段写「回测：codex-dispatch-reliability ship 9 个 finding 100% 属 B/C/D 维度 → 修后假想 iter 1 PASS」过于乐观。v2.2.0 debug-command ship dogfood 实测 iter 1 4 finding + iter 2 2 finding 触发 max loop，但 6/6 finding 都在新两轴 bounded 维度内（无越权前置），说明 v2.1.2 的真实目标是「防越审越深」而非「iter 1 PASS」。把回测预言改成更窄目标，避免误读。下次 ship 顺便修
 - **Phase 1.5 spec quality self-check (跨 ship 工艺改进)**：v2.2.0 debug-command dogfood 暴露 Phase 1.5 写 spec 容易漏 brief 真实点 (本次漏了 6 个: cross-command reframe 不完整 / scope lock 没写物理 / worktree 顺序错 / regression test 无 pre-fix 失败 / touched-files 用 commit 后 diff / KD8 只埋 2 处)。所有 6 个都被 audit 抓到，但本应 Phase 1.5 自己写好。候选: spec writing 阶段加 "对每条 brief checkbox 写一条 spec mapping" 的 self-check checklist，或者在 spec 模板里嵌入 brief↔spec 对照表。优先级 = 中 (dogfood 3-5 ship 后看是否高频复现再评估具体落地)
 - **历史 v2.1.1 / v2.1.2 / v2.1.3 缺 tag 补打 (contract drift, hygiene)**：`git tag -l 'v2.*'` 显示只有 v2.0.0 / v2.1.0 / v2.2.0，三个 patch release 缺 annotated tag，违反全局 CLAUDE.md「发行产品 = 完整 SemVer + tag + CHANGELOG」契约。补打方式: 对每个 CHANGELOG 已有的 [2.1.x] 段找到对应 release commit，打 `git tag -a v2.1.x -m "..."` + `git push origin v2.1.x`。优先级 = 低 (纯 hygiene，不阻塞功能；可作为下次小 ship 顺便补)
-- **（高优先 · 2026-06-17 vault 四件套体量审计暴露）doc-finish Class 1 加篇幅+视角硬约束**：`skills/finishing/SKILL.md:236-264` Class 1 仅说「Append an appropriate entry」无篇幅约束，配合 spec/plan/Codex report 三个巨型真相源 → agent 默认全塞，产出 2000+ 字单条目 CHANGELOG bullet（vault CHANGELOG 实测 128KB / 单条目 2500 字）。修向：Class 1 加引用 `hazeflow/_shared/versioning.md ## CHANGELOG 写作风格` + 硬约束「单 bullet ≤ 1 句话 + commit hash + 可选 spec/plan path；禁内嵌 sub-ship 编号 / reviewer finding / 改了 N 行 / fixture」。触发：写 vault CHANGELOG 时反复暴露
-- **（高优先 · 2026-06-17 同源）doc-finish Class 1 `linked_todo` ticked 后搬家**：`skills/finishing/SKILL.md:240` 现在 `linked_todo` 勾掉就完事，导致 ROADMAP 当前主线/Backlog 累积 `~~划掉~~`「已完成」勾痕（vault ROADMAP 91KB，半数体量是僵尸条目）。修向：Class 1 加追加流程：勾掉的 todo 同步 mv 到 CHANGELOG 对应版本块 + 从 ROADMAP 当前主线/Backlog 删行；roadmap 只朝未来不留勾痕（呼应全局 CLAUDE.md「CHANGELOG 朝过去 / ROADMAP 朝未来」铁律）
-- **（高优先 · 2026-06-17 vault `feat(brain-feed-extend-link)` Task 4 暴露）writing-plans / plan-to-codex-prompt 禁止把四件套写入列为 Task 交付物**：当前 plan 模板允许 Task 列 `Modify: CHANGELOG.md` + DoD `引用 commit hash + spec/plan path`，Codex 实施期间直接写 CHANGELOG → 完全绕过 doc-finish preview 机制。实例：vault `docs/ohaze/plans/2026-06-17-brain-feed-extend-link.md:221` Task 4 直接写「Modify: CHANGELOG.md (`[Unreleased]` 加本 ship 条目)」+ DoD 强制 commit hash + spec/plan path。修向：`skills/writing-plans/SKILL.md` + `skills/plan-to-codex-prompt/SKILL.md` 加红线「四件套写入一律 doc-finish 收口，Task 不得列 CHANGELOG/ROADMAP 改动作为交付物」；plan 模板 DoD 段加同款约束
 - **（中优先 · 2026-06-17 同源）debug-to-codex-prompt 同款禁令**：同上 — `skills/debug-to-codex-prompt/SKILL.md` 加红线，debug fix 期间禁止 Codex 写 CHANGELOG（统一由 finishing/doc-finish 收口）
 - **（中优先 · 2026-06-17 同源）codex-executor drift detection 扩展**：`skills/codex-executor/SKILL.md:279` 当前 drift 仅检测 CLAUDE.md/README.md/ROADMAP 描述失真，建议扩展规则：CLAUDE.md 任一 bullet > 150 chars 视为 drift 报 doc-finish；README 占位段 `{{...}}` 未填实视为 drift。这样过长内容 / 占位泄漏会被自动捕获进 doc-finish 修复
 

@@ -18,6 +18,18 @@
 
 ### Removed
 
+## [2.2.1] - 2026-06-17
+
+v2.2.1 主题：doc-finish 收口契约加固 — 防止下游项目在 ship 中产出膨胀文档 / 僵尸条目 / 旁路绕过 preview。
+
+### Changed
+- doc-finish CHANGELOG 篇幅+视角硬约束 / doc-finish-changelog-tightening: finishing/SKILL.md Class 1 引用 versioning.md 写作风格契约 (≤200字符 + 必带 hash + 消费者视角 + 禁内嵌)。(`c7afc67`)
+- doc-finish ROADMAP tick→prune / doc-finish-roadmap-prune: finishing/SKILL.md Class 1 把 linked_todo 从 ROADMAP `## 当前主线` 整行删除，不留 `- [x]`。(`c7afc67`)
+- plan→codex 链禁四件套写入 / plan-codex-four-piece-firewall: writing-plans 加红线禁列四件套作 Task 交付物；plan-to-codex-prompt 双闸禁 Codex 直接写四件套。(`8440714`, `7b70869`)
+
+### Fixed
+- ohaze 自身四件套对齐 / ohaze-self-alignment: CLAUDE.md 加 doc-finish 唯一收口契约 anchor；ROADMAP 清 v2.2.0 段历史勾痕 + Backlog 删问题 10/11/12 三条 (已落本 CHANGELOG)。(`c7afc67`)
+
 ## [2.2.0] - 2026-06-15
 
 v2.2.0 主题：流程档位扩展 — 新增 debug bug-fix mode，并让 ship 对误入的 bug 修复做反向 reframe。
