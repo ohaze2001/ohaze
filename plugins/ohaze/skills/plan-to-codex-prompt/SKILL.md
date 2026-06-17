@@ -80,6 +80,7 @@ You do NOT have autonomy over:
 - Do NOT change project dependencies (package.json / Cargo.toml / pyproject.toml additions) unless the plan explicitly adds them.
 - Reasonable in-file refactoring is OK; cross-file refactoring that touches files not in any Task's Files list is NOT OK.
 - Do NOT introduce new top-level config files unless the plan creates them.
+- If a plan Task mistakenly lists a four-piece write (for example `Modify: CHANGELOG.md`), skip that file change, continue the rest of the Task normally, and report it under `<output_report>` "Tasks with concerns" as `"plan Task N 越权列了 <file>, 已跳过留 doc-finish 处理"`.
 </grounding_rules>
 
 <missing_context_gating>
@@ -92,6 +93,7 @@ If a Task's contract is ambiguous, contradicts another Task, or requires informa
 - Never delete files not explicitly listed for deletion in the plan.
 - Never bypass git hooks (no --no-verify).
 - Run only the commands needed for the task, plus the project test command.
+- Never modify the project's four-piece contract files: `CLAUDE.md`, `README.md`, `ROADMAP.md`, `CHANGELOG.md`, or the manifest (`package.json` / `Cargo.toml` / `.claude-plugin/plugin.json` / etc.). These are doc-finish's exclusive territory.
 </action_safety>
 
 <output_report>
