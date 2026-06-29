@@ -13,12 +13,12 @@
 ### Added
 
 ### Changed
-- debug-to-codex-prompt 同款四件套防火墙 / debug-codex-four-piece-firewall: SKILL.md 加 `<four_piece_firewall>` 段，debug fix 期间禁止 Codex 直写 CLAUDE/README/ROADMAP/CHANGELOG/manifest，统一由 doc-finish 收口。
-- codex-executor DOC-DRIFT 扩展静态规则 / drift-detection-static-rules: reviewer PART 3 新增 CLAUDE.md bullet > 150 chars / README 残留 `{{...}}` 占位两条静态 drift 规则，自动捕获进 doc-finish 修复。
+- debug-to-codex-prompt 同款四件套防火墙 / debug-codex-four-piece-firewall: SKILL.md 加 `<four_piece_firewall>` 段，debug fix 期间禁止 Codex 直写 CLAUDE/README/ROADMAP/CHANGELOG/manifest，统一由 doc-finish 收口。(`9318c39`)
+- codex-executor DOC-DRIFT 扩展静态规则 / drift-detection-static-rules: reviewer PART 3 新增 CLAUDE.md bullet > 150 chars / README 残留 `{{...}}` 占位两条静态 drift 规则，自动捕获进 doc-finish 修复。(`9318c39`)
 
 ### Fixed
 - debug gate prompt 中文化 / debug-i18n-gate-prompts: 7 处 `AskUserQuestion` 补显式中文 question + 选项措辞统一中文，覆盖 systematic-debugging G1/G2、finishing 主菜单/ADVERSARIAL 多选、ship Phase 3.5/spec audit/spec-review iter3+、debug 空 symptom。(`fff62c7`)
-- CHANGELOG v2.1.2 段回测预言修正 / v2.1.2-backtest-narrowing: 把「9 个 finding 100% 属 B/C/D → 修后假想 iter 1 PASS」改成更窄目标「防 spec audit 越审越深前置 implementer 视角问题」，避免误读为「保证下次 iter 1 PASS」。
+- CHANGELOG v2.1.2 段回测预言修正 / v2.1.2-backtest-narrowing: 把「9 个 finding 100% 属 B/C/D → 修后假想 iter 1 PASS」改成更窄目标「防 spec audit 越审越深前置 implementer 视角问题」，避免误读为「保证下次 iter 1 PASS」。(`9318c39`)
 
 ### Removed
 
