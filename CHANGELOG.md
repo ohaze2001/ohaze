@@ -13,9 +13,12 @@
 ### Added
 
 ### Changed
+- debug-to-codex-prompt 同款四件套防火墙 / debug-codex-four-piece-firewall: SKILL.md 加 `<four_piece_firewall>` 段，debug fix 期间禁止 Codex 直写 CLAUDE/README/ROADMAP/CHANGELOG/manifest，统一由 doc-finish 收口。
+- codex-executor DOC-DRIFT 扩展静态规则 / drift-detection-static-rules: reviewer PART 3 新增 CLAUDE.md bullet > 150 chars / README 残留 `{{...}}` 占位两条静态 drift 规则，自动捕获进 doc-finish 修复。
 
 ### Fixed
 - debug gate prompt 中文化 / debug-i18n-gate-prompts: 7 处 `AskUserQuestion` 补显式中文 question + 选项措辞统一中文，覆盖 systematic-debugging G1/G2、finishing 主菜单/ADVERSARIAL 多选、ship Phase 3.5/spec audit/spec-review iter3+、debug 空 symptom。(`fff62c7`)
+- CHANGELOG v2.1.2 段回测预言修正 / v2.1.2-backtest-narrowing: 把「9 个 finding 100% 属 B/C/D → 修后假想 iter 1 PASS」改成更窄目标「防 spec audit 越审越深前置 implementer 视角问题」，避免误读为「保证下次 iter 1 PASS」。
 
 ### Removed
 
@@ -49,7 +52,7 @@ v2.2.0 主题：流程档位扩展 — 新增 debug bug-fix mode，并让 ship �
 ## [2.1.2] - 2026-06-14
 
 ### Fixed
-- **spec audit 「越审越深」元问题修复 / spec-audit-scope-reframe**：缩 spec-to-codex-review SKILL audit prompt 任务范围 — 删 B AMBIGUITY + C MISSING + D CONFLICTS 三个 dimension 段（这三个维度都是 implementer 实施阶段越权前置，天然无底洞），保留 A 改名 Functional Coverage + 原 E 改名 Implementation Quality 上提为 B 两个 bounded 维度。配机械锚点：A finding 必填 brief_anchor（cite brief checklist/scenario/out-of-scope line，cite 不出降 NICE-TO-HAVE 不阻塞），B finding 必填 better_alternative 子对象（current_approach + proposed_alternative + quantified_tradeoff，缺一不报）。Category enum 缩为 {COVERAGE-GAP, COVERAGE-DRIFT, ALT-DECISION} 3 值，旧 5 值 AMBIGUITY/MISSING/CONFLICT/DRIFT/ALT-DECISION 中前 4 个全删。新增 `<scope_boundary>` 段明示 implementer 视角问题走现有 `<missing_context_gating>` + Phase 5 cross-source review，audit 阶段不抓。回测：codex-dispatch-reliability ship 9 个 finding 100% 属 B/C/D 维度 → 修后假想 iter 1 PASS。
+- **spec audit 「越审越深」元问题修复 / spec-audit-scope-reframe**：缩 spec-to-codex-review SKILL audit prompt 任务范围 — 删 B AMBIGUITY + C MISSING + D CONFLICTS 三个 dimension 段（这三个维度都是 implementer 实施阶段越权前置，天然无底洞），保留 A 改名 Functional Coverage + 原 E 改名 Implementation Quality 上提为 B 两个 bounded 维度。配机械锚点：A finding 必填 brief_anchor（cite brief checklist/scenario/out-of-scope line，cite 不出降 NICE-TO-HAVE 不阻塞），B finding 必填 better_alternative 子对象（current_approach + proposed_alternative + quantified_tradeoff，缺一不报）。Category enum 缩为 {COVERAGE-GAP, COVERAGE-DRIFT, ALT-DECISION} 3 值，旧 5 值 AMBIGUITY/MISSING/CONFLICT/DRIFT/ALT-DECISION 中前 4 个全删。新增 `<scope_boundary>` 段明示 implementer 视角问题走现有 `<missing_context_gating>` + Phase 5 cross-source review，audit 阶段不抓。目标：防 spec audit「越审越深」前置 implementer 视角问题，而非保证下一次 iter 1 PASS。
 
 ### Planned
 - **未来某版** — tool-router（按任务复杂度自动路由 Codex / Claude / Gemini / DeepSeek，从 v1.x Planned 顺延，待 v2 稳定后重启评估）

@@ -72,6 +72,10 @@ base_ref for review is: {base_ref}
 ohaze orchestrator handles commits. Leave all changes uncommitted. Do not run git add, git commit, git push, or PR commands.
 </commit_handling>
 
+<four_piece_firewall>
+Never modify the project's four-piece contract files: `CLAUDE.md`, `README.md`, `ROADMAP.md`, `CHANGELOG.md`, or the manifest (`package.json` / `Cargo.toml` / `.claude-plugin/plugin.json` / etc.). These are doc-finish's exclusive territory; debug fixes that touch product/code paths must leave the doc-side drift for doc-finish to reconcile. If `<editable_files>` lists one of these by mistake, skip that file change, continue the rest of the fix normally, and report it under `<output_format>` as `scope_lock_breach_requested: <file> — reason: four-piece firewall, leave to doc-finish`.
+</four_piece_firewall>
+
 <verification_loop>
 Use the anti-regression contract from <fix_plan> and report which variant you executed.
 

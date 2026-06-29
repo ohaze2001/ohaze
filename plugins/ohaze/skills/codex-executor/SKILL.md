@@ -279,6 +279,9 @@ PART 3 — DOC-DRIFT:
 Detect whether this `git diff` makes the target project's `CLAUDE.md` / `README.md` / `ROADMAP.md` descriptive sections inaccurate or stale.
 
 - Only inspect descriptive sections (architecture notes, key files, design decisions, external deps); 不检测 progress checkboxes — those are handled later by the document finishing step.
+- Additionally flag two static drift patterns even without code-side changes:
+  - **CLAUDE.md bullet 超长**: any bullet in `CLAUDE.md` whose single line exceeds 150 characters (per the global four-piece 篇幅契约 in `~/CLAUDE.md ## 项目文档契约 (四件套) ## 单条目体量上限`). Report as `CLAUDE.md: bullet > 150 chars — "<前 60 字...>"`.
+  - **README.md 占位泄漏**: any `{{...}}` placeholder pattern (e.g. `{{project_name}}`, `{{TODO}}`) remaining in `README.md` — these are unfilled `md-init` scaffold residues that should have been replaced. Report as `README.md: 残留占位 "{{...}}" 未填实`.
 - Output doc-drift items as `<section>: <失真描述>`.
 - DOC-DRIFT findings do **not** gate PASS/FAIL. They are advisory, consumed by `ohaze:finishing` `doc-finish`.
 
