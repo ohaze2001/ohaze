@@ -4,7 +4,7 @@
 > Agent 行为指导看 CLAUDE.md. 项目自描述看 README.md.
 
 ## 当前主线
-v2.2.2 PATCH 累积中（debug gate prompt 中文化 等）。
+v2.2.2 PATCH 累积中（debug gate i18n + 4 条 backlog hygiene 收口）。
 
 ## Backlog
 - **`/ohaze:auto-ship` 命令（流程档位：中 — 小功能轻流程）**：介于 ship 和 debug 之间，跳过 BDD brainstorm + spec audit 的重 phase，brief→plan→execute→review 一条线；fork `superpowers:test-driven-development` 红绿节奏进自持版作为"必须有失败过的测试"边界。等 `/ohaze:debug` 跑通后边界更清楚再开

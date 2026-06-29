@@ -19,6 +19,7 @@
 ### Fixed
 - debug gate prompt 中文化 / debug-i18n-gate-prompts: 7 处 `AskUserQuestion` 补显式中文 question + 选项措辞统一中文，覆盖 systematic-debugging G1/G2、finishing 主菜单/ADVERSARIAL 多选、ship Phase 3.5/spec audit/spec-review iter3+、debug 空 symptom。(`fff62c7`)
 - CHANGELOG v2.1.2 段回测预言修正 / v2.1.2-backtest-narrowing: 把「9 个 finding 100% 属 B/C/D → 修后假想 iter 1 PASS」改成更窄目标「防 spec audit 越审越深前置 implementer 视角问题」，避免误读为「保证下次 iter 1 PASS」。(`9318c39`)
+- v2.1.1 / v2.1.2 annotated tag 补打 / historical-tag-backfill: 对齐「发行产品 = 完整 SemVer + tag + CHANGELOG」契约 (`5865a0d` / `7d7e18f`)；v2.1.3 不补 (从未单发已并入 v2.2.0)。
 
 ### Removed
 
