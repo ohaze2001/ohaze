@@ -12,8 +12,7 @@ v2.2.2 PATCH 累积中（debug gate i18n + 4 条 backlog hygiene 收口）。
 - 定期 diff superpowers v5.1.0 上游 brainstorming / using-git-worktrees SKILL.md（基线漂移监控）
 - 定期 diff superpowers v5.1.0 上游 systematic-debugging/SKILL.md（debug fork 基线漂移监控）
 - 如果观察到 plan-drift rate 超过可接受阈值，再加 plan Codex/Claude dry-run audit；当前 v2.1 先依赖 spec audit + implementation review 双闸。
-- spec-to-codex-review schema 校验脚本兜底：机械验「COVERAGE-* finding 的 `brief_anchor` 字符串在 brief 文件中能 grep 到对应内容」+「ALT-DECISION finding 的 `better_alternative` 三子字段全非空」。本 ship (v2.1.2 spec-audit-scope-reframe) Risk R3 提出，作为后续 ship 候选。优先级 = 中（dogfood 跑 3-5 ship 后再评估必要性）
-- **Phase 1.5 spec quality self-check (跨 ship 工艺改进)**：v2.2.0 debug-command dogfood 暴露 Phase 1.5 写 spec 容易漏 brief 真实点 (本次漏了 6 个: cross-command reframe 不完整 / scope lock 没写物理 / worktree 顺序错 / regression test 无 pre-fix 失败 / touched-files 用 commit 后 diff / KD8 只埋 2 处)。所有 6 个都被 audit 抓到，但本应 Phase 1.5 自己写好。候选: spec writing 阶段加 "对每条 brief checkbox 写一条 spec mapping" 的 self-check checklist，或者在 spec 模板里嵌入 brief↔spec 对照表。优先级 = 中 (dogfood 3-5 ship 后看是否高频复现再评估具体落地)
+- spec-to-codex-review schema 校验脚本兜底：机械验「COVERAGE-* finding 的 `brief_anchor` 字符串在 brief 文件中能 grep 到对应内容」+「ALT-DECISION finding 的 `better_alternative` 三子字段全非空」。本 ship (v2.1.2 spec-audit-scope-reframe) Risk R3 提出，作为后续 ship 候选。优先级 = 中（spec-audit-single-pass 落地后 dogfood 3 次再评估必要性）
 
 ## Bug
 - (无)
@@ -28,3 +27,4 @@ v2.2.2 PATCH 累积中（debug gate i18n + 4 条 backlog hygiene 收口）。
 - 审查强度分级（按改动规模调深度）—— v2 YAGNI
 - 引入其他 superpowers skill 拓展流程 —— 违「减少依赖」原则
 - vault 重连接口预留 —— 先剥干净再说
+- Phase 1.5 spec quality self-check —— 同源 LLM 盲点（spec-audit-single-pass 决策中同款思路被否，源头质量靠 brainstorm 阶段 haze 审 brief 保证）

@@ -43,7 +43,7 @@ cd <work_dir> && codex exec \
 Rules:
 
 - Use `codex exec`, NOT `codex exec resume`.
-- No thread reuse, no resume, fresh session every review iteration.
+- Single-pass audit per ship: one fresh `codex exec` session, no thread reuse, no resume. The caller does not re-invoke this skill after applying fixes.
 - Run from `main_repo_path` or `worktree_path` as the current working directory.
 - Do NOT pass `--cd`.
 - Do not use `nohup`, OS-level detachment, trailing `&`, pid files, or the `ScheduleWakeup` pattern.
@@ -260,4 +260,4 @@ If Codex output is malformed JSON:
 
 ## Caller Handoff
 
-Return control to `/ohaze:ship` Phase 1.6. The caller reads `<work_dir>/.ohaze/spec-review-verdict.json` and handles PASS, `fix-in-spec`, `ask-haze`, and max-2 loop escalation.
+Return control to `/ohaze:ship` Phase 1.6. The caller reads `<work_dir>/.ohaze/spec-review-verdict.json` once and handles PASS, `fix-in-spec`, and `ask-haze` in a single pass without re-invoking this skill. Phase 5 cross-source review is the second independent gate.

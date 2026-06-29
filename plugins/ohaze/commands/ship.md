@@ -128,14 +128,14 @@ Invoke `Skill(ohaze:spec-to-codex-review)` with:
 
 The skill writes `<work_dir>/.ohaze/spec-review-verdict.json`. `work_dir` is `main_repo_path` before the worktree exists and `worktree_path` after it exists.
 
-Read the verdict:
+Read the verdict and process all issues in a single pass (no re-audit):
 
 - `PASS` → proceed to Phase 2.
 - `NEEDS-CLARIFICATION` → route each issue:
-  - `fix-in-spec`: Claude edits the spec and reruns Phase 1.6.
-  - `ask-haze`: batch all product/scope questions into one `AskUserQuestion`, edit the spec with answers, and rerun Phase 1.6.
+  - `fix-in-spec`: Claude edits the spec.
+  - `ask-haze`: batch all product/scope questions into one `AskUserQuestion`, then edit the spec with the answers.
 
-Loop max is 2 review iterations. On iteration 3+ with remaining issues, trigger one `AskUserQuestion` with question `"Spec 审查 3 轮还有遗留 issue,怎么办?"` and exactly these three options: `接受当前 spec` / `修订 brief` / `丢弃 feature`.
+After processing all issues, proceed to Phase 2 directly. Codex audits the spec exactly once per ship; Phase 5 cross-source review is the second independent gate.
 
 If Phase 1.6 ran pre-worktree and created `<main_repo_path>/.ohaze/spec-review-verdict.json`, migrate or clean that temporary verdict after Phase 2 creates the worktree.
 
@@ -260,7 +260,6 @@ Create `<worktree_path>/.ohaze/current-ship.json` with:
   "brief_path": "<absolute path to docs/ohaze/briefs/<date>-<slug>-brief.md>",
   "spec_path": "<absolute path to docs/ohaze/specs/<date>-<slug>-design.md>",
   "plan_path": "<absolute path to docs/ohaze/plans/<date>-<feature>.md>",
-  "spec_review_iteration": 0,
   "retries": 0,
   "thread_id": "<codex --json thread.started UUID, or null>",
   "codex_bg_id": "<Bash(run_in_background) task id>",
@@ -274,7 +273,6 @@ Field semantics:
 
 - `ship_mode`: enum `"ship" | "debug"`, defaults to `"ship"` in this file. `/ohaze:debug` writes `"debug"` explicitly. Downstream (`ship-review`, `finishing`) routes by this; v2.2.0 only `ship-review` actually branches (L2 scope_lock + G3 blast-radius).
 - `brief_path`: Phase 2b brief file, consumed by finishing/doc-finish and Security Review trigger logic.
-- `spec_review_iteration`: Phase 1.6 loop counter, default 0; separate from Phase 6 `retries`.
 - `project_category`: `web | api | cli | plugin | agent | other | null`; set to `null` here and later filled by `ohaze:finishing`.
 - Existing fields keep their v2.0 meanings.
 
@@ -288,7 +286,6 @@ Ensure `.worktrees/` and `.ohaze/` are ignored. These are runtime artifacts, nev
 - User cancels during Phase 1 → stop cleanly and leave no ship artifacts.
 - Phase 1.5 cannot find relevant code in a new project → note "全新模块,无历史 ref" in the spec and continue.
 - Phase 1.6 verdict malformed twice → follow `spec-to-codex-review` fallback and surface the warning.
-- Phase 1.6 loop exceeds 2 → haze chooses accept current spec / revise brief / drop feature.
 - `ohaze:writing-plans` returns no usable plan path → stop and ask user.
 - `ohaze:codex-executor` fails to dispatch → surface the error verbatim.
 

@@ -146,7 +146,6 @@ Create `<worktree_path>/.ohaze/current-ship.json` with:
   "plan_path": "<absolute path to codex-debug-prompt.xml inside .ohaze/>",
   "spec_path": null,
   "brief_path": null,
-  "spec_review_iteration": 0,
   "retries": 0,
   "thread_id": "<UUID or null>",
   "codex_bg_id": "<bg task id>",
