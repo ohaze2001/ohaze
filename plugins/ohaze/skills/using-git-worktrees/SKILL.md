@@ -256,4 +256,4 @@ This reads the main worktree (always the first `worktree` line of `worktree list
 
 Forked from the `using-git-worktrees` skill in [obra/superpowers](https://github.com/obra/superpowers) v5.1.0 by Jesse Vincent, used under MIT license. The Step 0 / Step 1 / Step 3 / Step 4 skeleton is preserved near-verbatim. The "Removing a Worktree Safely (teardown)" section + `main_repo_path` capture + the corresponding Quick Reference / Common Mistakes / Red Flags entries are ohaze additions that fix the cwd-dangling failure mode (Claude Code upstream issue #50960).
 
-> **Locked baseline:** superpowers v5.1.0. Periodically `diff` the upstream `using-git-worktrees/SKILL.md` against this fork to spot drift in shared Step 0/1/3/4 behavior; ohaze additions (teardown) are intentional and stay.
+> **Locked baseline:** superpowers v5.1.0. ohaze fork 不跟随 upstream patch（已是借骨架的独立 skill），不需要定期 diff；只在 upstream 出新概念 / 新 skill 类型时人工评估是否反向揭示需求。
