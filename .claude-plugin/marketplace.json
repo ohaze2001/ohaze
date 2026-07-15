@@ -6,13 +6,13 @@
   },
   "metadata": {
     "description": "Personal Claude Code workflow: self-contained brainstorm/plan + Codex execute + adversarial cross-source review + finishing.",
-    "version": "0.1.0"
+    "version": "2.2.1"
   },
   "plugins": [
     {
       "name": "ohaze",
       "description": "End-to-end /ohaze:ship command: self-contained skills + Codex execution + adversarial cross-source review.",
-      "version": "0.1.0",
+      "version": "2.2.1",
       "author": {
         "name": "muling-dev"
       },

@@ -26,7 +26,7 @@ ohaze 是一个 single-plugin marketplace（仓库根即 marketplace）。
 **从 GitHub 安装（推荐）**
 
 ```text
-/plugin marketplace add ohaze2001/ohaze
+/plugin marketplace add Nooobhh/ohaze
 /plugin install ohaze@ohaze
 ```
 
@@ -41,7 +41,7 @@ ohaze 是一个 single-plugin marketplace（仓库根即 marketplace）。
 
 ## 架构
 
-`ohaze` 把多个工具的强项串成一条闭环流水线，**一条 `/ohaze:ship "做什么"` 命令端到端跑完**。v2.1 流程序：BDD brainstorm → brief approved → Claude 自动写 spec → Codex 异源审 spec → worktree 写 brief/spec → plan → Phase 3.5 摘要 + default-go → Codex → 异源审查 → 7 项 finishing 菜单。
+`ohaze` 把多个工具的强项串成一条闭环流水线，**一条 `/ohaze:ship "做什么"` 命令端到端跑完**。v2.1 流程序：BDD brainstorm → brief approved → Claude 自动写 spec → Codex 异源审 spec → worktree 写 brief/spec → plan → Phase 3.5 摘要 + default-go → Codex → 异源审查 → finishing 菜单。
 
 用户看到的是 feature brief 和产品语言的风险描述，不需要读 spec / plan 的实现细节。Phase 1.5 自动把 brief 转成 spec；Phase 1.6 用 `spec-to-codex-review` 让 Codex 在实现前审 spec；Phase 3.5 只给 plan 一句话摘要，然后默认进入 Codex 实现，仍可被 haze 打断。
 
@@ -66,7 +66,7 @@ v2.2.0 起 ohaze 是 **2-tier flow model**：`/ohaze:ship` 仍是完整 feature 
 | 5a. 主线程补 commit | Claude | `ohaze`（`codex-executor` Phase 5.0） |
 | 5b. 异源审查 git diff vs plan + **实跑测试** | Claude | `ohaze`（`general-purpose` subagent + 内联 4 部审查 prompt） |
 | 6. 修复重试（审查不通过，最多 3 次，含「卡住升级」诊断） | Codex | `codex exec resume <thread_id>`（无 `--sandbox`） |
-| 7. finishing（6 项菜单 + conditional Security Review + 收尾链 + 文档收尾） | Claude | `ohaze`（`finishing` skill） |
+| 7. finishing（5+2 条件项菜单 + 收尾链 + 文档收尾） | Claude | `ohaze`（`finishing` skill） |
 
 ### 控制流
 
@@ -87,7 +87,7 @@ v2.2.0 起 ohaze 是 **2-tier flow model**：`/ohaze:ship` 仍是完整 feature 
 - **异源对抗审查**：审查 subagent = `general-purpose`（继承 Opus），刻意异于 Codex。审查 prompt 含 PART 2.5 **实跑验证**（必须真跑 `project_test_command` 并量化输出）+ PART 4 ADVERSARIAL（设计层挑战，不 gate）。
 - **审查重试**：失败送 `codex exec resume <thread_id>` 修复，上限 3 次（含「卡住升级」诊断 —— 同类 issue 反复出现时识别 plan 问题 vs 执行问题，不盲烧 retry）。
 - **resume 边界**：`resume` 仅用于同一 ship 生命周期（review retry / modify / 第 6 项 ADVERSARIAL 修复）；finishing 后的 bug 修复 = 新 fix ship。
-- **finishing**：`ohaze:finishing` skill 拥有 Phase 7 —— 项目类型检测（local/remote）+ project_category + 6 项菜单 + conditional Security Review + 收尾链 + doc-finish 内化 neat 路由。
+- **finishing**：`ohaze:finishing` skill 拥有 Phase 7 —— 项目类型检测（local/remote）+ project_category + 5+2 条件项菜单 + 收尾链 + doc-finish 内化 neat 路由。
 - **产品语言 finding 展示**：`findings-detail.json` 保存技术细节；haze 只看到 `user_impact_description`。
 - **2-tier flow model**：v2.2.0 新增 `/ohaze:debug`，和 `/ohaze:ship` 平级；ship 处理 feature-dev，debug 处理 bug-fix root-cause-first。
 - **`ship_mode` handoff field**：`.ohaze/current-ship.json` 写 `ship_mode: "ship" | "debug"`；legacy 缺失按 `"ship"` 处理，`ship-review` 只在 debug mode 分流 L2/G3。
@@ -108,7 +108,6 @@ v2.2.0 起 ohaze 是 **2-tier flow model**：`/ohaze:ship` 仍是完整 feature 
 开发期常用：
 
 - 改完插件文件：`/plugin marketplace update ohaze`（拉新版）
-- 推 GitHub：`gh repo create ohaze2001/ohaze --public --source=. --push`
 
 ## 使用
 
@@ -126,7 +125,7 @@ v2.2.0 起 ohaze 是 **2-tier flow model**：`/ohaze:ship` 仍是完整 feature 
 # - 主线程帮 Codex 补 commit (commit 权留在主线程)
 # - general-purpose 异源 subagent 审查 git diff vs plan (实跑 project_test_command, 含 ADVERSARIAL + DOC-DRIFT)
 # - 不通过 → codex exec resume <thread_id> 修复 (无 --sandbox), 上限 3 次, 含卡住升级诊断
-# - 通过 → 6 项 finishing 菜单
+# - 通过 → finishing 菜单
 ```
 
 Debug 主流程：
@@ -145,7 +144,7 @@ Debug 主流程：
 
 ### Finishing 菜单
 
-`ohaze:finishing` skill 检测项目类型（`local` / `remote`）和 `project_category`，给出推荐收尾链，再列菜单（5 或 6 项；Security Review 作为第 7 项在 web/API 或外部输入场景出现）：
+`ohaze:finishing` skill 检测项目类型（`local` / `remote`）和 `project_category`，给出推荐收尾链，再列菜单（基础 5 项 + 2 个条件项：第 6 项 ADVERSARIAL 修复、第 7 项 Security Review）：
 
 ```
 1. 执行推荐收尾（一键到底）
@@ -179,14 +178,13 @@ Debug 主流程：
 
 ## 历史
 
-已发布版本主题 / 进度路线见 [ROADMAP.md](./ROADMAP.md)。
-完整 SemVer changelog 见 [CHANGELOG.md](./CHANGELOG.md)。
+ROADMAP / CHANGELOG 在本地工作区维护，不随 GitHub 仓库发布。
 
 ## 相关项目 / 文档
 
 - **`superpowers`**（`claude-plugins-official`）：brainstorming / using-git-worktrees / writing-plans 上游来源；v2.0.0 起 ohaze fork 子集自持，运行时不依赖。
 - **`codex` CLI**（`@openai/codex`）：中段执行引擎（版本基线 0.137）。
-- **`docs/ohaze/briefs/` / `docs/ohaze/specs/` / `docs/ohaze/plans/`**：本仓库内的 brief / spec / plan 产物。
+- **`docs/ohaze/briefs/` / `docs/ohaze/specs/` / `docs/ohaze/plans/`**：brief / spec / plan 本地工作产物，已 gitignore，不随仓库发布。
 
 ## License
 
