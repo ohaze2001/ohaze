@@ -15,7 +15,7 @@ This skill is forked-and-adapted from `superpowers:writing-plans` (Jesse Vincent
 
 **Announce at start:** "I'm using the ohaze:writing-plans skill to create the guidance plan."
 
-**Context:** If working in an isolated worktree, it should have been created via the `superpowers:using-git-worktrees` skill at execution time.
+**Context:** If working in an isolated worktree, it should have been created via the `ohaze:using-git-worktrees` skill at execution time.
 
 **Save plans to:** `docs/ohaze/plans/YYYY-MM-DD-<feature-name>.md`
 
@@ -300,7 +300,7 @@ If invoked standalone (not inside `/ohaze:ship`), just print:
 
 - It does not execute the plan. That's `codex exec` (dispatched by `ohaze:codex-executor`).
 - It does not invoke `superpowers:subagent-driven-development` or `superpowers:executing-plans`. Those are different execution models incompatible with ohaze's Codex-end-to-end flow.
-- It does not write the spec. That's `superpowers:brainstorming`.
+- It does not write the spec. That's `/ohaze:ship` Phase 1.5 (Claude writes it from the `ohaze:brainstorming` brief).
 - It does not modify or distill an existing plan. For that, edit the file or re-invoke this skill against the spec.
 
 ---

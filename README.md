@@ -76,7 +76,7 @@ v2.2.0 起 ohaze 是 **2-tier flow model**：`/ohaze:ship` 仍是完整 feature 
 
 ### 设计决策（v2.1.0 / v2.2.0）
 
-- **零运行时外部 skill 依赖**：brainstorming / using-git-worktrees / writing-plans 全部自持（fork 子集，非整仓）。锁基线 superpowers v5.1.0，定期 diff 上游。
+- **零运行时外部 skill 依赖**：brainstorming / using-git-worktrees / writing-plans 全部自持（fork 子集，非整仓）。锁基线 superpowers v5.1.0；fork 已自主，不跟上游 patch，只在上游出新概念时人工评估。
 - **流程序 brief → spec audit → worktree brief/spec**：haze 只 approve brief；Claude 自动写 spec，Codex 审 spec；建 worktree 后在 worktree 内写 `docs/ohaze/briefs/` + `docs/ohaze/specs/` 并 commit。
 - **plan default-go**：`docs/ohaze/plans/` 产物只摘要给 haze，默认进入 Codex 实现，仍允许用户打断。
 - **显式项目路径参数**：`/ohaze:ship "..." --project <abs-path>` 锁定目标项目，不靠 `pwd` detect（harness 会重置 cwd）。

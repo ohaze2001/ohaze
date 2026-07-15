@@ -5,13 +5,13 @@
     "email": "viv1dguycn@gmail.com"
   },
   "metadata": {
-    "description": "Personal Claude Code workflow: superpowers brainstorm/plan + Codex execute + Claude review + superpowers finishing.",
+    "description": "Personal Claude Code workflow: self-contained brainstorm/plan + Codex execute + adversarial cross-source review + finishing.",
     "version": "0.1.0"
   },
   "plugins": [
     {
       "name": "ohaze",
-      "description": "End-to-end /ohaze:ship command orchestrating superpowers + codex + reviewer subagents.",
+      "description": "End-to-end /ohaze:ship command: self-contained skills + Codex execution + adversarial cross-source review.",
       "version": "0.1.0",
       "author": {
         "name": "muling-dev"
