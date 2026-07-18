@@ -82,7 +82,9 @@ v2.2.0 起 ohaze 是 **2-tier flow model**：`/ohaze:ship` 仍是完整 feature 
 - **显式项目路径参数**：`/ohaze:ship "..." --project <abs-path>` 锁定目标项目，不靠 `pwd` detect（harness 会重置 cwd）。
 - **Codex 调用**：初始 `codex exec --sandbox danger-full-access --cd <worktree> --json` 经 `Bash(run_in_background:true)` 派发，**无 nohup / no &**。
 - **thread_id 捕获**：解析 `--json` 首事件 `{"type":"thread.started","thread_id":"<UUID>"}`；与 `~/.codex/sessions/.../rollout-*-<UUID>.jsonl` 一致。
-- **resume 不带 `--sandbox`**：`codex exec resume <thread_id>` 不重复传 sandbox（codex 0.137 拒绝），sandbox 继承自初始 dispatch。
+- **resume 不带 `--sandbox` / `--cd`**：`codex exec resume <thread_id>` 拒收这两个 flag（codex 0.137 起持续行为,0.144.5 实测未变），sandbox 继承自初始 dispatch,cd 由调用方 shell 层负责。
+- **顶层 dispatch stdin 稳态**：prompt-as-arg + `< /dev/null` 关 stdin —— 源于 codex 0.137 stdin redirect silent crash 的 mitigation；0.140+ 已修,arg 传法作为清晰风格保留。
+- **resume 用 PROMPT arg**：codex 0.140+ 起 `codex exec resume <id> "<prompt>"` 接受 top-level PROMPT arg（0.137 拒收,曾用 stdin redirect + 30s liveness + KillBash 兜底）；已切 arg 传法,见 `codex-executor` Phase 6 与 `finishing` 6th/modify 2a。
 - **commit 处理**：Codex 不自 commit；主线程按 plan suggested message 统一补，可按文件重叠 split per-Task。
 - **异源对抗审查**：审查 subagent = `general-purpose`（继承 Opus），刻意异于 Codex。审查 prompt 含 PART 2.5 **实跑验证**（必须真跑 `project_test_command` 并量化输出）+ PART 4 ADVERSARIAL（设计层挑战，不 gate）。
 - **审查重试**：失败送 `codex exec resume <thread_id>` 修复，上限 3 次（含「卡住升级」诊断 —— 同类 issue 反复出现时识别 plan 问题 vs 执行问题，不盲烧 retry）。
@@ -91,7 +93,7 @@ v2.2.0 起 ohaze 是 **2-tier flow model**：`/ohaze:ship` 仍是完整 feature 
 - **产品语言 finding 展示**：`findings-detail.json` 保存技术细节；haze 只看到 `user_impact_description`。
 - **2-tier flow model**：v2.2.0 新增 `/ohaze:debug`，和 `/ohaze:ship` 平级；ship 处理 feature-dev，debug 处理 bug-fix root-cause-first。
 - **`ship_mode` handoff field**：`.ohaze/current-ship.json` 写 `ship_mode: "ship" | "debug"`；legacy 缺失按 `"ship"` 处理，`ship-review` 只在 debug mode 分流 L2/G3。
-- **KD6 三层 scope lock**：L1 prompt `<editable_files>` 白名单，L2 review 阶段比对 touched files vs `scope_lock_files`，L3 G3 blast-radius gate；在 codex 0.137 无文件级 sandbox 前作为最强可行边界。
+- **KD6 三层 scope lock**：L1 prompt `<editable_files>` 白名单，L2 review 阶段比对 touched files vs `scope_lock_files`，L3 G3 blast-radius gate；在 codex 尚无文件级 sandbox 前（0.137–0.144.5 均未提供）作为最强可行边界。
 - **KD9 manual-restart reframe acceptance**：ship 三处 reframe checkpoint 命中后，haze 接受切 debug 时先干净退出，再提示手动重启 `/ohaze:debug "<symptom>"`，避免跨 command 中段状态转换。
 - **KD10 worktree-before-investigation**：debug 在 Pre-flight 后立即建 worktree，systematic-debugging 全程在隔离 workspace 内跑，避免调研污染 main checkout。
 
@@ -183,7 +185,7 @@ ROADMAP / CHANGELOG 在本地工作区维护，不随 GitHub 仓库发布。
 ## 相关项目 / 文档
 
 - **`superpowers`**（`claude-plugins-official`）：brainstorming / using-git-worktrees / writing-plans 上游来源；v2.0.0 起 ohaze fork 子集自持，运行时不依赖。
-- **`codex` CLI**（`@openai/codex`）：中段执行引擎（版本基线 0.137）。
+- **`codex` CLI**（`@openai/codex`）：中段执行引擎（版本基线 0.144.5；0.137 stdin crash 已在 0.140+ 修复）。
 - **`docs/ohaze/briefs/` / `docs/ohaze/specs/` / `docs/ohaze/plans/`**：brief / spec / plan 本地工作产物，已 gitignore，不随仓库发布。
 
 ## License

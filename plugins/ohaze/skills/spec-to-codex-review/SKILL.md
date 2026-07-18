@@ -48,7 +48,7 @@ Rules:
 - Do NOT pass `--cd`.
 - Do not use `nohup`, OS-level detachment, trailing `&`, pid files, or the `ScheduleWakeup` pattern.
 - Dispatch with `Bash(run_in_background: true)` harness background. See `ohaze:codex-executor` Dispatch Mode Vocabulary for the distinction between harness background, forbidden OS-level background, and the documented foreground sync exceptions.
-- Pass the prompt as the top-level CLI argument via `"$(cat <prompt_file>)"` and close stdin with `< /dev/null` to avoid the codex 0.137 stdin redirect silent crash.
+- Pass the prompt as the top-level CLI argument via `"$(cat <prompt_file>)"` and close stdin with `< /dev/null`. Originally a codex 0.137 stdin redirect silent crash mitigation; 0.140+ fixed the crash, but the arg-as-prompt pattern is retained as clearer style and grep-able dispatch shape.
 
 ## Prompt Template
 

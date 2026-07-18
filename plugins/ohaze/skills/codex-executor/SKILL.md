@@ -75,7 +75,7 @@ codex exec \
 - **No `nohup`, no trailing `&`, no `> log 2>&1`, no `echo $! > pid_file`** — those are OS-level background patterns forbidden by the Dispatch Mode Vocabulary. Use harness background only.
 - **Must include `--json`** so we can parse the streamed event log for `thread.started` and the final message.
 - **Must run inside a real git project directory** (`--cd <worktree_path>` points at the ship worktree). codex exec exits non-zero in `/tmp` or any non-git path.
-- **Must close stdin with `< /dev/null`**. codex 0.137 can silently crash when the initial `codex exec --json` prompt is provided via stdin redirect; passing the prompt as the top-level CLI argument and closing stdin avoids that transport failure.
+- **Must close stdin with `< /dev/null`**. Originally a mitigation for codex 0.137 stdin redirect silent crash; 0.140+ fixed the crash, but the arg-as-prompt + closed-stdin pattern is retained for clearer dispatch shape and continued safety against future transport regressions.
 - **Must dispatch with `Bash(run_in_background: true)`** so the harness owns completion and re-invocation. See Dispatch Mode Vocabulary for why OS-level background is forbidden.
 - **Must pipe stdout through `tee <worktree_path>/.ohaze/codex-output.jsonl`** — `tee` writes a persistent copy of the full `--json` stream to disk while letting `BashOutput(codex_bg_id)` continue to read the live stream (tee duplicates stdout, breaking neither path). The persisted file is the cross-session fallback for Phase 5.0 / doc-finish when `codex_bg_id` expires (`/exit` between dispatch and finish). `.ohaze/` is already gitignored — the file is runtime artifact, never committed.
 
@@ -86,7 +86,7 @@ Immediately after dispatch, run a bounded 30s transport check:
 1. Call `BashOutput(codex_bg_id)` with `filter='thread.started'` and wait up to 30 seconds for the first event.
 2. If no `thread.started` appears, call `KillBash(codex_bg_id)`.
 3. Re-dispatch once using the same prompt file and the same command from Step 2, then repeat the same 30s `thread.started` liveness check.
-4. If the second attempt also fails, transition `.ohaze/current-ship.json.state` to `dispatch_failed` via Read-modify-Write (preserve all other fields, clear `codex_bg_id` and `thread_id` to `null`), then surface this warning verbatim and stop: `WARNING: codex initial dispatch failed liveness check twice; codex 0.137 stdin crash or pre-thread transport failure. State transitioned to dispatch_failed; rerun /ohaze:ship or /ohaze:ship-review to resume.`
+4. If the second attempt also fails, transition `.ohaze/current-ship.json.state` to `dispatch_failed` via Read-modify-Write (preserve all other fields, clear `codex_bg_id` and `thread_id` to `null`), then surface this warning verbatim and stop: `WARNING: codex initial dispatch failed liveness check twice; pre-thread transport failure (historically also codex 0.137 stdin crash, fixed in 0.140+). State transitioned to dispatch_failed; rerun /ohaze:ship or /ohaze:ship-review to resume.`
 5. If the check passes, proceed to Step 3 to capture `thread_id` and `codex_bg_id`.
 
 This liveness check is a transport-layer crash detector, not a completion poll.
@@ -121,7 +121,7 @@ The authoritative `current-ship.json` schema is defined in `commands/ship.md`; t
 
 ### Step 5 — Report and let go
 
-Don't poll asynchronously for completion, don't sleep, don't `ScheduleWakeup`. The ONLY bounded synchronous poll allowed is the 30s dispatch-liveness check immediately after dispatch (Phase 4 initial + Phase 6 retry + spec-to-codex-review Phase 1.6) to detect codex 0.137 stdin silent crash; this is a transport-layer crash detector, not a completion poll. Report to the user and return control to the caller; the main agent's turn ends. The harness will re-invoke the main agent when the background codex task exits, and `/ohaze:ship-review`'s idempotent state gate will pick up from there.
+Don't poll asynchronously for completion, don't sleep, don't `ScheduleWakeup`. The ONLY bounded synchronous poll allowed is the 30s dispatch-liveness check immediately after dispatch (Phase 4 initial + Phase 6 retry + spec-to-codex-review Phase 1.6) to detect pre-thread transport failure (historically also codex 0.137 stdin silent crash, fixed in 0.140+); this is a transport-layer crash detector, not a completion poll. Report to the user and return control to the caller; the main agent's turn ends. The harness will re-invoke the main agent when the background codex task exits, and `/ohaze:ship-review`'s idempotent state gate will pick up from there.
 
 > "Codex 在后台跑 (codex_bg_id=`<id>`, thread_id=`<UUID|null>`, sandbox=`danger-full-access`).
 > 进程完成后 harness 会自动唤醒主 agent 进 review,无需手动触发。
@@ -142,7 +142,7 @@ ohaze keeps commit authority at the orchestrator (Claude main session) by conven
      3. **Final degradation**: if the tee file is also missing (extremely rare — manual `.ohaze/` cleanup, or a pre-v2.1.3 worktree without tee), surface one short warning to the caller and proceed without Codex's report. Downstream callers (e.g. doc-finish) have their own end-stage fallback chain (spec + plan + git diff).
    - **Foreground path (set by `ohaze:finishing` 6th option / modify 2a)**: caller passes input `codex_report_source` = absolute path to a teed `.ohaze/codex-*-output.jsonl` file. Use `Bash(tail -c 200000 <file>)` then scan for the final `message` event. **Do not** use `BashOutput(codex_bg_id)` on this path — `codex_bg_id` still points at the prior background dispatch (stale stream).
 
-   The final `message` event contains the structured report (Tasks completed / Touched files / Notable choices / suggested per-Task commit messages). **Do not rely on `-o/--output-last-message`** — that flag does not produce a file when `--json` is set (verified against codex 0.137 in dogfood).
+   The final `message` event contains the structured report (Tasks completed / Touched files / Notable choices / suggested per-Task commit messages). Note: `-o/--output-last-message` does work alongside `--json` on codex 0.144.5 (a historical 0.137 声明 that it produced no file is now outdated). We still parse the `--json` stream because the tee-file / `BashOutput` path carries richer data (per-Task commit messages, touched files, notable choices) than the last-message text alone.
 
 2. Inspect what Codex left behind:
 
@@ -389,24 +389,24 @@ Track retry counter starting at 0; persist in `.ohaze/current-ship.json.retries`
 
   4. Read `thread_id` from `.ohaze/current-ship.json`. Write the fix prompt to `<worktree_path>/.ohaze/codex-fix-iter<N>.xml` via Write tool, then dispatch.
 
-     **Command — `codex exec resume` flag asymmetry vs initial dispatch (verified against codex 0.137):**
+     **Command — `codex exec resume` flag asymmetry vs initial dispatch (persistent behavior, verified against codex 0.137 through 0.144.5):**
      - `codex exec resume` does **NOT** accept `--cd` (only top-level `codex exec` does). Empirical: `codex exec resume --help` does not list `-C/--cd`; passing it errors `unexpected argument '--cd'`. So we change working directory in the shell BEFORE invoking resume.
-     - `codex exec resume` does **NOT** accept `--sandbox`. Sandbox is fixed at the initial `codex exec` and inherited by every resume; passing `--sandbox` to `resume` is rejected by codex 0.137.
+     - `codex exec resume` does **NOT** accept `--sandbox`. Sandbox is fixed at the initial `codex exec` and inherited by every resume; passing `--sandbox` to `resume` is rejected on every version tested (0.137–0.144.5).
 
      Dispatch via `Bash(run_in_background: true)`:
 
      ```bash
      cd <worktree_path> && codex exec resume <thread_id> \
-       --json \
-       < <worktree_path>/.ohaze/codex-fix-iter<N>.xml
+       "$(cat <worktree_path>/.ohaze/codex-fix-iter<N>.xml)" \
+       --json
      ```
 
-     Because `codex exec resume` does not accept a top-level PROMPT argument in codex 0.137, this resume command must keep stdin redirect. Immediately after dispatch, run the same bounded transport liveness check as Phase 4 Step 2.5:
+     Since codex 0.140+, `codex exec resume` accepts a top-level PROMPT argument (verified on 0.144.5), so the fix prompt is passed as an arg rather than via stdin redirect. Immediately after dispatch, run the same bounded transport liveness check as Phase 4 Step 2.5:
 
      1. Call `BashOutput(codex_bg_id)` with `filter='thread.started'` and wait up to 30 seconds.
      2. If no `thread.started` appears, call `KillBash(codex_bg_id)`.
      3. Re-dispatch once with the same `thread_id` and the same prompt file, then repeat the 30s liveness check.
-     4. If the second attempt also fails, transition `.ohaze/current-ship.json.state` to `dispatch_failed` via Read-modify-Write (preserve all other fields, clear `codex_bg_id` to `null`; preserve `thread_id` for manual resume), then surface this warning verbatim and do not retry again: `WARNING: codex resume dispatch failed liveness check twice; codex 0.137 stdin crash. State transitioned to dispatch_failed. Suggest /ohaze:ship-review --more or manual resume.`
+     4. If the second attempt also fails, transition `.ohaze/current-ship.json.state` to `dispatch_failed` via Read-modify-Write (preserve all other fields, clear `codex_bg_id` to `null`; preserve `thread_id` for manual resume), then surface this warning verbatim and do not retry again: `WARNING: codex resume dispatch failed liveness check twice; pre-thread transport failure. State transitioned to dispatch_failed. Suggest /ohaze:ship-review --more or manual resume.`
      5. If the check passes, continue with the `codex_bg_id` capture-and-persist rule below.
 
      This liveness check is a transport-layer crash detector, not a completion poll.
@@ -415,7 +415,7 @@ Track retry counter starting at 0; persist in `.ohaze/current-ship.json.retries`
 
      Dispatching via `Bash(run_in_background: true)` lets the harness re-invoke the main agent on completion — same control-flow shape as Phase 4. The orchestrator does not wait synchronously.
 
-     If `thread_id` is missing or `null`: print and append a prominent warning to the user — `WARNING: thread_id 缺失,resume 退化为 --last,并行 ship 下不精确` — only then dispatch the fallback `cd <worktree_path> && codex exec resume --last --json < <fix prompt>` (still no `--cd`, no `--sandbox`). Same `codex_bg_id` capture-and-persist rule applies.
+     If `thread_id` is missing or `null`: print and append a prominent warning to the user — `WARNING: thread_id 缺失,resume 退化为 --last,并行 ship 下不精确` — only then dispatch the fallback `cd <worktree_path> && codex exec resume --last "$(cat <fix prompt>)" --json` (still no `--cd`, no `--sandbox`). Same `codex_bg_id` capture-and-persist rule applies.
 
      If exact resume fails to find the prior thread (rare — codex was restarted between sessions, or the rollout file was rotated): fall back to a fresh `codex exec` with a `<task>` that embeds both the original goal (re-read from the saved prompt file) and the fix delta. Note this in the retry log so the reviewer knows context may have been lost.
 
@@ -442,11 +442,11 @@ Track retry counter starting at 0; persist in `.ohaze/current-ship.json.retries`
 - Does NOT translate plan to prompt — that's `ohaze:plan-to-codex-prompt`.
 - Does NOT run brainstorming, planning, worktree setup, or finishing — those are owned by `ohaze:brainstorming` / `ohaze:writing-plans` / `ohaze:using-git-worktrees` / `ohaze:finishing`, orchestrated by `/ohaze:ship`.
 - Does NOT schedule any `ScheduleWakeup` — the v2 control flow relies on `Bash(run_in_background: true)` harness background re-invoke. No fallback wakeup is set (A-plan: state gate is the only ghost-wake defense, see spec §3).
-- Does NOT poll asynchronously for completion. The control-flow pattern is: `Bash(run_in_background: true)` harness background dispatch → bounded liveness check only → main turn ends → harness re-invokes on codex exit → `/ohaze:ship-review` state gate picks up. The ONLY bounded synchronous poll allowed is the 30s dispatch-liveness check immediately after dispatch (Phase 4 initial + Phase 6 retry + spec-to-codex-review Phase 1.6) to detect codex 0.137 stdin silent crash; this is a transport-layer crash detector, not a completion poll.
+- Does NOT poll asynchronously for completion. The control-flow pattern is: `Bash(run_in_background: true)` harness background dispatch → bounded liveness check only → main turn ends → harness re-invokes on codex exit → `/ohaze:ship-review` state gate picks up. The ONLY bounded synchronous poll allowed is the 30s dispatch-liveness check immediately after dispatch (Phase 4 initial + Phase 6 retry + spec-to-codex-review Phase 1.6) to detect pre-thread transport failure (historically also codex 0.137 stdin silent crash, fixed in 0.140+); this is a transport-layer crash detector, not a completion poll.
 
 ## Resume Boundary
 
-Use `codex exec resume` only inside the same ship lifecycle: the review retry loop (Phase 6 above) and the finishing modify / 6th-option ADVERSARIAL-fix flows (`ohaze:finishing`). All use the captured `thread_id`, no `--sandbox`.
+Use `codex exec resume` only inside the same ship lifecycle: the review retry loop (Phase 6 above) and the finishing modify / 6th-option ADVERSARIAL-fix flows (`ohaze:finishing`). All use the captured `thread_id`, PROMPT-as-arg, no `--sandbox`, no `--cd`.
 
 If a bug is found after finishing completes, start a **新 fix ship** with a new worktree, new plan, and new Codex session. Do **not** resume the old session post-finish. Feed the old feature's plan and relevant commits into the new ship prompt as explicit reference material instead of depending on Codex session memory.
 
@@ -457,5 +457,5 @@ If a bug is found after finishing completes, start a **新 fix ship** with a new
 - **Reviewer subagent returns malformed verdict**: re-dispatch the reviewer once with stricter format guidance. If it fails again, fall back to asking the user to read `git diff` and decide.
 - **Real test command unknown**: stop and ask the user. Do NOT guess `npm test` for a project that has no `package.json`; the spec's verification-before-completion requirement demands a real command.
 - **Exact `codex exec resume <thread_id>` fails to find prior thread**: fall back to fresh `codex exec` with combined "original task + fix delta" prompt. Note in the retry log so the reviewer knows context may have been lost.
-- **`thread_id` missing**: log `WARNING: thread_id 缺失,resume 退化为 --last,并行 ship 下不精确`, then and only then use fallback `cd <worktree_path> && codex exec resume --last --json` (no `--cd`, no `--sandbox`). Capture and persist the new `codex_bg_id` as with any other resume.
+- **`thread_id` missing**: log `WARNING: thread_id 缺失,resume 退化为 --last,并行 ship 下不精确`, then and only then use fallback `cd <worktree_path> && codex exec resume --last "$(cat <prompt file>)" --json` (no `--cd`, no `--sandbox`). Capture and persist the new `codex_bg_id` as with any other resume.
 - **Stuck loop (same issues iter after iter)**: trigger the Phase 6 stuck-detection diagnosis — do not blindly burn retries 2 and 3.

@@ -37,7 +37,7 @@ Read `state` from `<worktree>/.ohaze/current-ship.json` and act per this table. 
 | `review_fail` | Proceed to retry (Phase 6 in `ohaze:codex-executor`). Retry counter is already in the handoff. |
 | `kept` | Tell the user the previous ship was paused via finish menu option 4 → suggest `/ohaze:ship-finish` to resume. End. |
 | `self-edit-pending` | Tell the user the previous ship was paused via finish menu option 2c → suggest `/ohaze:ship-finish` after their manual edits. End. |
-| `dispatch_failed` | Codex initial or retry dispatch failed liveness check twice (codex 0.137 stdin crash or pre-thread transport failure). Surface `WARNING: ship is in dispatch_failed state. codex_bg_id is null (process killed). thread_id={value or null}.` and tell the user to either rerun `/ohaze:ship` (fresh dispatch, discards thread) or manually resume via `cd <worktree_path> && codex exec resume <thread_id> ...` if thread_id is preserved. Do NOT auto-retry. End. |
+| `dispatch_failed` | Codex initial or retry dispatch failed liveness check twice (pre-thread transport failure; historically also codex 0.137 stdin crash, fixed in 0.140+). Surface `WARNING: ship is in dispatch_failed state. codex_bg_id is null (process killed). thread_id={value or null}.` and tell the user to either rerun `/ohaze:ship` (fresh dispatch, discards thread) or manually resume via `cd <worktree_path> && codex exec resume <thread_id> "<prompt>"` if thread_id is preserved. Do NOT auto-retry. End. |
 | `blast_radius_escalated` | Debug-mode G3 escalated this repair out of `/ohaze:debug`. Surface a warning and tell haze to restart with `/ohaze:ship` for the full flow. End. |
 
 > The gate eats ghost wake-ups, double `/ohaze:ship-review` invocations, and accidental re-invokes alike. There is no fallback `ScheduleWakeup` because dogfood (spec §3) proved harness re-invoke is reliable; A-plan: state gate is the only defense.
@@ -56,7 +56,7 @@ When the harness re-invokes the main agent after a `Bash(run_in_background)` Cod
    - If output shows Codex died mid-run (unhandled error, no final `message`, or output is truncated): surface the error verbatim and stop. Do NOT enter review on incomplete work.
 
    **(b) Task still running BUT final `message` event already present in filtered tail (race-window tiebreaker):**
-   - This is the codex 0.137 emit-final-then-exit window (tens of ms to seconds between the final JSON event emission and the actual process exit syscall). Without this tiebreaker we'd fall into branch (c) → end turn → and if the harness re-invoke that brought us here was the only one we'll get for this task, we'd deadlock.
+   - This is the codex emit-final-then-exit race window (tens of ms to seconds between the final JSON event emission and the actual process exit syscall; observed across 0.137–0.144.5). Without this tiebreaker we'd fall into branch (c) → end turn → and if the harness re-invoke that brought us here was the only one we'll get for this task, we'd deadlock.
    - Sleep briefly (~2s) via `Bash(sleep 2)`, then re-query `BashOutput <codex_bg_id> filter=...` once.
      - If task status is now `completed`: fall through to branch (a).
      - If task status is STILL `running` after the recheck (codex genuinely emitted a non-final message): fall through to branch (c) — truly wait.
@@ -211,7 +211,7 @@ The finishing skill owns: project-type detection, recommended finish chain, docu
 
 ## Failure Modes
 
-- Background Codex genuinely failed (the `--json` stream tail shows an unhandled error, not just incomplete output): surface the error verbatim; do NOT enter review loop. Suggest the user re-run `cd <worktree> && codex exec resume <thread_id> --json` (NOT `--cd`, NOT `--sandbox` — both are rejected by codex 0.137 on resume) manually with a corrective prompt, or warn before using the `--last` fallback if `thread_id` is absent.
+- Background Codex genuinely failed (the `--json` stream tail shows an unhandled error, not just incomplete output): surface the error verbatim; do NOT enter review loop. Suggest the user re-run `cd <worktree> && codex exec resume <thread_id> "<corrective prompt>" --json` (NOT `--cd`, NOT `--sandbox` — both persistently rejected on resume, 0.137 起至 0.144.5 未变) manually, or warn before using the `--last` fallback if `thread_id` is absent.
 - Reviewer subagent returns malformed verdict twice: fall back to asking the user to read `git diff` and judge.
 - Handoff file references a worktree path that no longer exists: stop, surface, ask user.
 - Push fails (no remote, auth missing): not this skill's problem — `ohaze:finishing` owns push/PR and surfaces those errors itself.

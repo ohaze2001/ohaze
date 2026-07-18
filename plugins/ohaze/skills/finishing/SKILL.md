@@ -148,18 +148,18 @@ Selecting it runs an ADVERSARIAL-fix mini-loop before any terminal action:
 
    ```bash
    cd <worktree_path> && codex exec resume <thread_id> \
+     "$(cat <worktree_path>/.ohaze/codex-adversarial-fix.xml)" \
      --json \
-     < <worktree_path>/.ohaze/codex-adversarial-fix.xml \
      | tee <worktree_path>/.ohaze/codex-adversarial-fix-output.jsonl
    ```
 
-   NOTE — foreground sync stdin silent crash recovery: this option is a documented `foreground sync` exception in `ohaze:codex-executor` Dispatch Mode Vocabulary. `codex exec resume` does not accept a PROMPT argument in codex 0.137, so this command must use stdin redirect, which is the remaining stdin silent crash risk surface. Because the finishing skill must stay foreground sync across the mini-loop, a crash can leave the main thread blocked while the tee file stays empty. If `<worktree_path>/.ohaze/codex-adversarial-fix-output.jsonl` is still 0 bytes after 30s, run `tail -f <worktree_path>/.ohaze/codex-adversarial-fix-output.jsonl` to confirm no output, press Ctrl-C to kill the foreground command, return to the finishing menu, and choose option 6 again. The option is idempotent and retry usually succeeds.
+   This option remains a documented `foreground sync` exception in `ohaze:codex-executor` Dispatch Mode Vocabulary. Since codex 0.140+, `codex exec resume` accepts a top-level PROMPT argument, so we pass the fix prompt as an arg (no stdin redirect, no residual stdin silent crash surface).
 
-   Command flag asymmetry (verified against codex 0.137):
+   Command flag asymmetry (persistent behavior, verified against codex 0.137 through 0.144.5):
    - `codex exec resume` does **NOT** accept `--cd` (only top-level `codex exec` does). Change directory in the shell first.
    - `codex exec resume` does **NOT** accept `--sandbox`. Sandbox is inherited from the initial dispatch.
 
-   If `thread_id` is missing, fall back to `cd <worktree_path> && codex exec resume --last --json < <fix prompt> | tee <output-file>` with a prominent WARNING (same fallback rule as `ohaze:codex-executor` Phase 6).
+   If `thread_id` is missing, fall back to `cd <worktree_path> && codex exec resume --last "$(cat <fix prompt>)" --json | tee <output-file>` with a prominent WARNING (same fallback rule as `ohaze:codex-executor` Phase 6).
 
 5. **Auto-commit Codex's changes** via `ohaze:codex-executor` Phase 5.0 — but pass an explicit `codex_report_source` pointing at the teed file (`<worktree_path>/.ohaze/codex-adversarial-fix-output.jsonl`), NOT `BashOutput(codex_bg_id)`. Phase 5.0's report extraction step accepts either a `codex_bg_id` (background path) or a `codex_report_source` file path (foreground path); for this mini-loop, only the latter has the just-completed fix's report. Without this override Phase 5.0 would read the original dispatch's stale stream and use wrong per-Task commit messages.
 
@@ -410,18 +410,18 @@ Write to `<worktree_path>/.ohaze/codex-modify.xml` via Write tool. Then dispatch
 
 ```bash
 cd <worktree_path> && codex exec resume <thread_id> \
+  "$(cat <worktree_path>/.ohaze/codex-modify.xml)" \
   --json \
-  < <worktree_path>/.ohaze/codex-modify.xml \
   | tee <worktree_path>/.ohaze/codex-modify-output.jsonl
 ```
 
-NOTE — foreground sync stdin silent crash recovery for rerunning Codex after modifying the spec/plan: this modify 2a path is a documented `foreground sync` exception in `ohaze:codex-executor` Dispatch Mode Vocabulary. `codex exec resume` does not accept a PROMPT argument in codex 0.137, so this command must use stdin redirect, which is the remaining stdin silent crash risk surface. Because the finishing skill must stay foreground sync across the modify mini-loop, a crash can leave the main thread blocked while the tee file stays empty. If `<worktree_path>/.ohaze/codex-modify-output.jsonl` is still 0 bytes after 30s, run `tail -f <worktree_path>/.ohaze/codex-modify-output.jsonl` to confirm no output, press Ctrl-C to kill the foreground command, return to the finishing menu, and choose modify option 2a again. The action is idempotent and retry usually succeeds.
+This modify 2a path remains a documented `foreground sync` exception in `ohaze:codex-executor` Dispatch Mode Vocabulary. Since codex 0.140+, `codex exec resume` accepts a top-level PROMPT argument, so we pass the modify prompt as an arg (no stdin redirect, no residual stdin silent crash surface).
 
-Command flag asymmetry (verified against codex 0.137):
+Command flag asymmetry (persistent behavior, verified against codex 0.137 through 0.144.5):
 - `codex exec resume` does **NOT** accept `--cd` (only top-level `codex exec` does). Change directory in the shell first.
 - `codex exec resume` does **NOT** accept `--sandbox`. Sandbox is inherited from the initial dispatch.
 
-If `thread_id` is missing, fall back to `cd <worktree_path> && codex exec resume --last --json < <modify prompt> | tee <output-file>` with a prominent WARNING.
+If `thread_id` is missing, fall back to `cd <worktree_path> && codex exec resume --last "$(cat <modify prompt>)" --json | tee <output-file>` with a prominent WARNING.
 
 After Codex returns (foreground), run `ohaze:codex-executor` Phase 5.0 — pass `codex_report_source=<worktree_path>/.ohaze/codex-modify-output.jsonl` so Phase 5.0 reads the just-completed modify's report (not the stale Phase 4 dispatch's `BashOutput(codex_bg_id)`). Commit pending changes with a message derived from `change_description`. Then ask whether to re-run review. Re-review does NOT increment the retry counter (user-initiated, not reviewer-driven). Loop back to the finishing menu.
 
@@ -463,4 +463,3 @@ After terminal actions, print:
 - Push/PR failure: surface the exact error and return to the menu.
 - Merge `--ff-only` failure: use the merge-commit vs exit prompt above.
 - Codex resume in option 6 / modify 2a fails to find prior thread: fall back to fresh `codex exec` with embedded original goal, log warning.
-- Foreground codex resume hits stdin silent crash: symptom is option 6 or modify 2a blocking with a 0-byte tee output file for 30s. Recovery: `tail -f <output-file>` to confirm no output, press Ctrl-C to kill the foreground command, return to the finishing menu, and reselect option 6 or modify option 2a. See the foreground sync NOTE after each command block.

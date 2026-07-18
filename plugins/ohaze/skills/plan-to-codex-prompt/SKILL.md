@@ -112,7 +112,7 @@ At the end, report in this format:
 - The `{full verbatim contents of plan.md}` slot is non-negotiable for ohaze:writing-plans output. The plan is already the right size and shape (contract form). Do not summarize, reformat, or strip checkboxes.
 - If `plan.md` is over 30,000 characters, embed it as-is anyway — Codex handles long plans fine.
 - If `project_test_command` truly cannot be determined, leave the literal placeholder `{project_test_command}` AND stop before sending; ask the user. Do not guess `npm test` for a project that has no `package.json`.
-- After producing the prompt string, the caller (typically `ohaze:codex-executor` skill) writes it to `<worktree>/.ohaze/codex-prompt.xml` and passes the file content as the top-level prompt argument to `codex exec --sandbox danger-full-access` running in the background (`Bash(run_in_background: true)`), with stdin redirected to `/dev/null` to avoid codex 0.137 stdin silent crash. See `ohaze:codex-executor` Phase 4 Step 2 for the exact dispatch command.
+- After producing the prompt string, the caller (typically `ohaze:codex-executor` skill) writes it to `<worktree>/.ohaze/codex-prompt.xml` and passes the file content as the top-level prompt argument to `codex exec --sandbox danger-full-access` running in the background (`Bash(run_in_background: true)`), with stdin closed via `< /dev/null` (arg-as-prompt style, retained after 0.140+ fixed the 0.137 stdin silent crash). See `ohaze:codex-executor` Phase 4 Step 2 for the exact dispatch command.
 
 ## What this skill does NOT do
 
